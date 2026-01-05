@@ -25,10 +25,15 @@ def build_kiro_request(
     history: List[dict] = None,
     tools: List[dict] = None,
     images: List[dict] = None,
-    tool_results: List[dict] = None
+    tool_results: List[dict] = None,
+    max_history: int = 50  # 限制历史消息数量
 ) -> dict:
     """构建 Kiro API 请求体"""
     conversation_id = str(uuid.uuid4())
+    
+    # 截断历史消息，保留最近的
+    if history and len(history) > max_history:
+        history = history[-max_history:]
     
     user_input_message = {
         "content": user_content,
