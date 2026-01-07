@@ -384,26 +384,30 @@ HTML_SETTINGS = '''
   <div class="card">
     <h3>请求限速 <button class="secondary small" onclick="loadRateLimitConfig()">刷新</button></h3>
     <p style="color:var(--muted);font-size:0.875rem;margin-bottom:1rem">
-      通过限制请求频率降低账号封禁风险
+      启用后会限制请求频率，并在遇到 429 错误时短暂冷却账号
     </p>
     
     <label style="display:flex;align-items:center;gap:0.5rem;margin-bottom:1rem;cursor:pointer">
       <input type="checkbox" id="rateLimitEnabled" onchange="updateRateLimitConfig()">
-      <span><strong>启用限速</strong></span>
+      <span><strong>启用限速</strong>（关闭时 429 错误不会导致账号冷却）</span>
     </label>
     
     <div id="rateLimitOptions" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:1rem;margin-bottom:1rem">
       <div>
         <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">最小请求间隔（秒）</label>
-        <input type="number" id="minRequestInterval" value="1.0" min="0" max="10" step="0.5" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)" onchange="updateRateLimitConfig()">
+        <input type="number" id="minRequestInterval" value="0.5" min="0" max="10" step="0.1" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)" onchange="updateRateLimitConfig()">
       </div>
       <div>
         <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">每账号每分钟最大请求</label>
-        <input type="number" id="maxRequestsPerMinute" value="30" min="1" max="100" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)" onchange="updateRateLimitConfig()">
+        <input type="number" id="maxRequestsPerMinute" value="60" min="1" max="200" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)" onchange="updateRateLimitConfig()">
       </div>
       <div>
         <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">全局每分钟最大请求</label>
-        <input type="number" id="globalMaxRequestsPerMinute" value="60" min="1" max="200" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)" onchange="updateRateLimitConfig()">
+        <input type="number" id="globalMaxRequestsPerMinute" value="120" min="1" max="300" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)" onchange="updateRateLimitConfig()">
+      </div>
+      <div>
+        <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">429 冷却时间（秒）</label>
+        <input type="number" id="quotaCooldownSeconds" value="30" min="5" max="300" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)" onchange="updateRateLimitConfig()">
       </div>
     </div>
     
@@ -1322,15 +1326,17 @@ async function loadRateLimitConfig(){
     const r=await fetch('/api/settings/rate-limit');
     const d=await r.json();
     $('#rateLimitEnabled').checked=d.enabled;
-    $('#minRequestInterval').value=d.min_request_interval||1.0;
-    $('#maxRequestsPerMinute').value=d.max_requests_per_minute||30;
-    $('#globalMaxRequestsPerMinute').value=d.global_max_requests_per_minute||60;
+    $('#minRequestInterval').value=d.min_request_interval||0.5;
+    $('#maxRequestsPerMinute').value=d.max_requests_per_minute||60;
+    $('#globalMaxRequestsPerMinute').value=d.global_max_requests_per_minute||120;
+    $('#quotaCooldownSeconds').value=d.quota_cooldown_seconds||30;
     // 更新统计
     const stats=d.stats||{};
     $('#rateLimitStats').innerHTML=`
-      <div style="display:flex;justify-content:space-between">
+      <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">
         <span>状态: <span class="badge ${d.enabled?'success':'warn'}">${d.enabled?'已启用':'已禁用'}</span></span>
         <span>全局 RPM: ${stats.global_rpm||0}</span>
+        <span>429 冷却: ${d.enabled?(d.quota_cooldown_seconds||30)+'秒':'禁用'}</span>
       </div>
     `;
   }catch(e){console.error('加载限速配置失败:',e)}
@@ -1339,9 +1345,10 @@ async function loadRateLimitConfig(){
 async function updateRateLimitConfig(){
   const config={
     enabled:$('#rateLimitEnabled').checked,
-    min_request_interval:parseFloat($('#minRequestInterval').value)||1.0,
-    max_requests_per_minute:parseInt($('#maxRequestsPerMinute').value)||30,
-    global_max_requests_per_minute:parseInt($('#globalMaxRequestsPerMinute').value)||60
+    min_request_interval:parseFloat($('#minRequestInterval').value)||0.5,
+    max_requests_per_minute:parseInt($('#maxRequestsPerMinute').value)||60,
+    global_max_requests_per_minute:parseInt($('#globalMaxRequestsPerMinute').value)||120,
+    quota_cooldown_seconds:parseInt($('#quotaCooldownSeconds').value)||30
   };
   try{
     await fetch('/api/settings/rate-limit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)});

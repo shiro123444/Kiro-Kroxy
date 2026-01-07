@@ -452,6 +452,7 @@ async def api_get_rate_limit_config():
         "min_request_interval": limiter.config.min_request_interval,
         "max_requests_per_minute": limiter.config.max_requests_per_minute,
         "global_max_requests_per_minute": limiter.config.global_max_requests_per_minute,
+        "quota_cooldown_seconds": limiter.config.quota_cooldown_seconds,
         "stats": limiter.get_stats()
     }
 
@@ -467,6 +468,7 @@ async def api_update_rate_limit_config(request: Request):
         "min_request_interval": limiter.config.min_request_interval,
         "max_requests_per_minute": limiter.config.max_requests_per_minute,
         "global_max_requests_per_minute": limiter.config.global_max_requests_per_minute,
+        "quota_cooldown_seconds": limiter.config.quota_cooldown_seconds,
     }}
 
 
