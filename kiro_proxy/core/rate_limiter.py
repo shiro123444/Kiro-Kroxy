@@ -4,6 +4,7 @@
 - 每账号请求间隔
 - 全局请求限制
 - 突发请求检测
+- 配额超限冷却控制
 """
 import time
 from dataclasses import dataclass, field
@@ -15,16 +16,19 @@ from collections import deque
 class RateLimitConfig:
     """限速配置"""
     # 每账号最小请求间隔（秒）
-    min_request_interval: float = 1.0
+    min_request_interval: float = 0.5
     
     # 每账号每分钟最大请求数
-    max_requests_per_minute: int = 30
+    max_requests_per_minute: int = 60
     
     # 全局每分钟最大请求数
-    global_max_requests_per_minute: int = 60
+    global_max_requests_per_minute: int = 120
     
-    # 是否启用限速
-    enabled: bool = True
+    # 是否启用限速（同时控制配额冷却）
+    enabled: bool = False
+    
+    # 配额超限冷却时间（秒）- 只在 enabled=True 时生效
+    quota_cooldown_seconds: int = 30
 
 
 @dataclass
@@ -75,12 +79,12 @@ class RateLimiter:
         # 检查每账号每分钟限制
         account_rpm = state.get_requests_in_window(60)
         if account_rpm >= self.config.max_requests_per_minute:
-            return False, 5, f"账号请求过于频繁 ({account_rpm}/分钟)"
+            return False, 2, f"账号请求过于频繁 ({account_rpm}/分钟)"
         
         # 检查全局每分钟限制
         global_rpm = sum(1 for t in self._global_requests if t > now - 60)
         if global_rpm >= self.config.global_max_requests_per_minute:
-            return False, 3, f"全局请求过于频繁 ({global_rpm}/分钟)"
+            return False, 1, f"全局请求过于频繁 ({global_rpm}/分钟)"
         
         return True, 0, None
     
@@ -92,12 +96,21 @@ class RateLimiter:
         state.request_times.append(now)
         self._global_requests.append(now)
     
+    def should_apply_quota_cooldown(self) -> bool:
+        """是否应该应用配额冷却（只在限速启用时）"""
+        return self.config.enabled
+    
+    def get_quota_cooldown_seconds(self) -> int:
+        """获取配额冷却时间"""
+        return self.config.quota_cooldown_seconds if self.config.enabled else 0
+    
     def get_stats(self) -> dict:
         """获取统计信息"""
         now = time.time()
         return {
             "enabled": self.config.enabled,
             "global_rpm": sum(1 for t in self._global_requests if t > now - 60),
+            "quota_cooldown_seconds": self.config.quota_cooldown_seconds,
             "accounts": {
                 aid: {
                     "rpm": state.get_requests_in_window(60),

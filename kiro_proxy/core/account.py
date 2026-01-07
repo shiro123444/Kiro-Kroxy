@@ -128,10 +128,19 @@ class Account:
             return False, result
     
     def mark_quota_exceeded(self, reason: str = "Rate limited"):
-        """标记配额超限"""
-        quota_manager.mark_exceeded(self.id, reason)
-        self.status = CredentialStatus.COOLDOWN
-        self.error_count += 1
+        """标记配额超限（只在限速启用时生效）"""
+        from .rate_limiter import get_rate_limiter
+        rate_limiter = get_rate_limiter()
+        
+        if rate_limiter.should_apply_quota_cooldown():
+            # 使用限速器配置的冷却时间
+            cooldown = rate_limiter.get_quota_cooldown_seconds()
+            quota_manager.mark_exceeded(self.id, reason, cooldown_seconds=cooldown)
+            self.status = CredentialStatus.COOLDOWN
+            self.error_count += 1
+        # 如果限速未启用，不标记冷却，只记录错误
+        else:
+            self.error_count += 1
     
     def get_status_info(self) -> dict:
         """获取状态信息"""

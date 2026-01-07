@@ -41,13 +41,14 @@ class QuotaManager:
         error_lower = error_message.lower()
         return any(kw in error_lower for kw in self.QUOTA_KEYWORDS)
     
-    def mark_exceeded(self, credential_id: str, reason: str) -> QuotaRecord:
+    def mark_exceeded(self, credential_id: str, reason: str, cooldown_seconds: int = None) -> QuotaRecord:
         """标记凭证为配额超限"""
         now = time.time()
+        cooldown = cooldown_seconds if cooldown_seconds is not None else self.cooldown_seconds
         record = QuotaRecord(
             credential_id=credential_id,
             exceeded_at=now,
-            cooldown_until=now + self.cooldown_seconds,
+            cooldown_until=now + cooldown,
             reason=reason
         )
         self.exceeded_records[credential_id] = record
