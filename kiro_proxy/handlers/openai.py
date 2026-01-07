@@ -195,7 +195,7 @@ async def handle_chat_completions(request: Request):
                 content = parse_event_stream(resp.content)
                 current_account.request_count += 1
                 current_account.last_used = time.time()
-                rate_limiter.record_request(current_account.id)
+                get_rate_limiter().record_request(current_account.id)
                 break
                 
         except HTTPException:

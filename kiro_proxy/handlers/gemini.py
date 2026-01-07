@@ -183,7 +183,7 @@ async def handle_generate_content(model_name: str, request: Request):
                 result = parse_event_stream_full(resp.content)
                 current_account.request_count += 1
                 current_account.last_used = time.time()
-                rate_limiter.record_request(current_account.id)
+                get_rate_limiter().record_request(current_account.id)
                 break
                 
         except HTTPException:

@@ -367,7 +367,7 @@ async def _handle_stream(kiro_request, headers, account, model, log_id, start_ti
 
                         current_account.request_count += 1
                         current_account.last_used = time.time()
-                        rate_limiter.record_request(current_account.id)
+                        get_rate_limiter().record_request(current_account.id)
                         return
 
             except httpx.TimeoutException:
@@ -483,7 +483,7 @@ async def _handle_non_stream(kiro_request, headers, account, model, log_id, star
                 result = parse_event_stream_full(response.content)
                 current_account.request_count += 1
                 current_account.last_used = time.time()
-                rate_limiter.record_request(current_account.id)
+                get_rate_limiter().record_request(current_account.id)
 
                 # 完成 Flow
                 if flow_id:
