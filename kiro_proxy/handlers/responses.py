@@ -367,7 +367,23 @@ async def handle_responses(request: Request):
     if TruncateStrategy.AUTO_TRUNCATE not in history_manager.config.strategies:
         history_manager.config.strategies.append(TruncateStrategy.AUTO_TRUNCATE)
     
-    history = history_manager.pre_process(history, user_content)
+    # 创建摘要 API 调用函数
+    async def api_caller(prompt: str) -> str:
+        req = build_kiro_request(prompt, "claude-haiku-4.5", [])
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=60) as client:
+                resp = await client.post(KIRO_API_URL, json=req, headers=headers)
+                if resp.status_code == 200:
+                    return parse_event_stream(resp.content)
+        except Exception as e:
+            print(f"[Responses] Summary API 调用失败: {e}")
+        return ""
+    
+    # 检查是否需要智能摘要或错误重试预摘要
+    if history_manager.should_summarize(history) or history_manager.should_pre_summary_for_error_retry(history, user_content):
+        history = await history_manager.pre_process_async(history, user_content, api_caller)
+    else:
+        history = history_manager.pre_process(history, user_content)
     
     if history_manager.was_truncated:
         print(f"[Responses] {history_manager.truncate_info}")
