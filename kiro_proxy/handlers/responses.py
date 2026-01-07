@@ -480,6 +480,19 @@ async def _handle_stream(kiro_request, headers, account, model, log_id, start_ti
                         error_text = await response.aread()
                         error_msg = error_text.decode()[:500]
                         print(f"[Responses] Kiro error: {response.status_code} - {error_msg[:200]}")
+                        
+                        # 打印更多调试信息
+                        if response.status_code == 400:
+                            cs = kiro_request.get("conversationState", {})
+                            hist = cs.get("history", [])
+                            print(f"[Responses] 400 Debug: history_len={len(hist)}")
+                            if hist:
+                                # 检查 history 结构
+                                for i, h in enumerate(hist[:3]):
+                                    print(f"[Responses]   hist[{i}]: {list(h.keys())}")
+                                if len(hist) > 3:
+                                    print(f"[Responses]   ... ({len(hist)-3} more)")
+                        
                         error_occurred = True
                         
                         # 映射错误代码
