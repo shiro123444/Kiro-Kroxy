@@ -379,7 +379,32 @@ async def api_glm_chat(request: Request):
     body = await request.json()
     messages = body.get("messages", [])
     model = body.get("model", "glm-4.7")
-    return await glm_chat_completions(messages, model)
+    
+    # 读取 README 作为知识库
+    readme_content = ""
+    try:
+        readme_path = Path(__file__).parent.parent / "README.md"
+        if not readme_path.exists():
+            readme_path = Path("README.md")
+        if readme_path.exists():
+            readme_content = readme_path.read_text(encoding="utf-8")
+    except:
+        pass
+    
+    # 构建 System Prompt
+    system_prompt = f"""你是 Kiro Proxy 的使用助手。请根据以下文档回答用户问题，回答要简洁实用。
+
+{readme_content}
+
+请直接回答用户问题，不要自我介绍。如果问题与 Kiro Proxy 无关，礼貌地引导用户询问相关问题。"""
+    
+    # 注入 system prompt
+    final_messages = [{"role": "system", "content": system_prompt}]
+    for m in messages:
+        if m.get("role") != "system":
+            final_messages.append(m)
+    
+    return await glm_chat_completions(final_messages, model)
 
 
 # ==================== 启动 ====================
