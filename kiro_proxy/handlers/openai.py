@@ -9,8 +9,9 @@ from fastapi import Request, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..config import KIRO_API_URL, map_model_name
-from ..models import state, RequestLog
-from ..kiro_api import build_headers, build_kiro_request, parse_event_stream
+from ..core import state
+from ..core.state import RequestLog
+from ..kiro_api import build_headers, build_kiro_request, parse_event_stream, is_quota_exceeded_error
 from ..converters import generate_session_id, convert_openai_messages_to_kiro, extract_images_from_content
 
 
@@ -31,7 +32,14 @@ async def handle_chat_completions(request: Request):
     account = state.get_available_account(session_id)
     
     if not account:
-        raise HTTPException(503, "All accounts are rate limited")
+        raise HTTPException(503, "All accounts are rate limited or unavailable")
+    
+    # 检查 token 是否即将过期，尝试刷新
+    if account.is_token_expiring_soon(5):
+        print(f"[OpenAI] Token 即将过期，尝试刷新: {account.id}")
+        success, msg = await account.refresh_token()
+        if not success:
+            print(f"[OpenAI] Token 刷新失败: {msg}")
     
     token = account.get_token()
     if not token:
@@ -47,59 +55,89 @@ async def handle_chat_completions(request: Request):
             _, images = extract_images_from_content(last_msg.get("content", ""))
     
     kiro_request = build_kiro_request(user_content, model, history, images=images)
-    headers = build_headers(token)
+    
+    # 使用账号的动态 Machine ID
+    creds = account.get_credentials()
+    headers = build_headers(
+        token,
+        machine_id=account.get_machine_id(),
+        profile_arn=creds.profile_arn if creds else None,
+        client_id=creds.client_id if creds else None
+    )
     
     error_msg = None
     status_code = 200
     content = ""
+    current_account = account
+    max_retries = 2
     
-    try:
-        async with httpx.AsyncClient(verify=False, timeout=120) as client:
-            resp = await client.post(KIRO_API_URL, json=kiro_request, headers=headers)
-            status_code = resp.status_code
-            
-            if resp.status_code == 429:
-                state.mark_rate_limited(account.id, 60)
-                new_account = state.get_available_account()
-                if new_account and new_account.id != account.id:
-                    token = new_account.get_token()
-                    headers = build_headers(token)
-                    resp = await client.post(KIRO_API_URL, json=kiro_request, headers=headers)
-                    status_code = resp.status_code
-                    account = new_account
-                else:
-                    raise HTTPException(429, "Rate limited")
-            
-            if resp.status_code != 200:
-                error_msg = resp.text
-                # 打印详细错误信息
-                import logging
-                logging.error(f"Kiro API error {resp.status_code}: {resp.text[:500]}")
-                raise HTTPException(resp.status_code, resp.text)
-            
-            content = parse_event_stream(resp.content)
-            account.request_count += 1
-            account.last_used = time.time()
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        error_msg = str(e)
-        status_code = 500
-        raise HTTPException(500, str(e))
-    finally:
-        duration = (time.time() - start_time) * 1000
-        state.add_log(RequestLog(
-            id=log_id,
-            timestamp=time.time(),
-            method="POST",
-            path="/v1/chat/completions",
-            model=model,
-            account_id=account.id if account else None,
-            status=status_code,
-            duration_ms=duration,
-            error=error_msg
-        ))
+    for retry in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient(verify=False, timeout=120) as client:
+                resp = await client.post(KIRO_API_URL, json=kiro_request, headers=headers)
+                status_code = resp.status_code
+                
+                # 处理配额超限
+                if resp.status_code == 429 or is_quota_exceeded_error(resp.status_code, resp.text):
+                    current_account.mark_quota_exceeded("Rate limited")
+                    
+                    # 尝试切换账号
+                    next_account = state.get_next_available_account(current_account.id)
+                    if next_account and retry < max_retries:
+                        print(f"[OpenAI] 配额超限，切换账号: {current_account.id} -> {next_account.id}")
+                        current_account = next_account
+                        token = current_account.get_token()
+                        creds = current_account.get_credentials()
+                        headers = build_headers(
+                            token,
+                            machine_id=current_account.get_machine_id(),
+                            profile_arn=creds.profile_arn if creds else None,
+                            client_id=creds.client_id if creds else None
+                        )
+                        continue
+                    
+                    raise HTTPException(429, "All accounts rate limited")
+                
+                if resp.status_code != 200:
+                    error_msg = resp.text
+                    print(f"[OpenAI] Kiro API error {resp.status_code}: {resp.text[:500]}")
+                    
+                    # 检查是否为配额超限
+                    if is_quota_exceeded_error(resp.status_code, error_msg):
+                        current_account.mark_quota_exceeded(error_msg[:100])
+                        next_account = state.get_next_available_account(current_account.id)
+                        if next_account and retry < max_retries:
+                            current_account = next_account
+                            headers["Authorization"] = f"Bearer {current_account.get_token()}"
+                            continue
+                    
+                    raise HTTPException(resp.status_code, resp.text)
+                
+                content = parse_event_stream(resp.content)
+                current_account.request_count += 1
+                current_account.last_used = time.time()
+                break
+                
+        except HTTPException:
+            raise
+        except Exception as e:
+            error_msg = str(e)
+            status_code = 500
+            raise HTTPException(500, str(e))
+    
+    # 记录日志
+    duration = (time.time() - start_time) * 1000
+    state.add_log(RequestLog(
+        id=log_id,
+        timestamp=time.time(),
+        method="POST",
+        path="/v1/chat/completions",
+        model=model,
+        account_id=current_account.id if current_account else None,
+        status=status_code,
+        duration_ms=duration,
+        error=error_msg
+    ))
     
     if stream:
         async def generate():

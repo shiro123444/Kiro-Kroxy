@@ -7,10 +7,11 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import MODELS_URL, MACHINE_ID
-from .models import state
+from .config import MODELS_URL
+from .core import state
 from .handlers import anthropic, openai, gemini, admin
 from .web.html import HTML_PAGE
+from .credential import generate_machine_id, get_kiro_version
 
 app = FastAPI(title="Kiro API Proxy", docs_url="/docs", redoc_url=None)
 
@@ -51,9 +52,12 @@ async def models():
             raise Exception("No available account")
         
         token = account.get_token()
+        machine_id = account.get_machine_id()
+        kiro_version = get_kiro_version()
+        
         headers = {
             "content-type": "application/json",
-            "x-amz-user-agent": f"aws-sdk-js/1.0.27 KiroIDE-0.8.0-{MACHINE_ID}",
+            "x-amz-user-agent": f"aws-sdk-js/1.0.0 KiroIDE-{kiro_version}-{machine_id}",
             "amz-sdk-invocation-id": str(uuid.uuid4()),
             "Authorization": f"Bearer {token}",
         }
@@ -175,6 +179,36 @@ async def api_import_config(request: Request):
 @app.post("/api/token/refresh-check")
 async def api_refresh_check():
     return await admin.refresh_token_check()
+
+
+@app.post("/api/accounts/{account_id}/refresh")
+async def api_refresh_account(account_id: str):
+    """刷新指定账号的 token"""
+    return await admin.refresh_account_token(account_id)
+
+
+@app.post("/api/accounts/refresh-all")
+async def api_refresh_all():
+    """刷新所有即将过期的 token"""
+    return await admin.refresh_all_tokens()
+
+
+@app.post("/api/accounts/{account_id}/restore")
+async def api_restore_account(account_id: str):
+    """恢复账号（从冷却状态）"""
+    return await admin.restore_account(account_id)
+
+
+@app.get("/api/accounts/{account_id}")
+async def api_account_detail(account_id: str):
+    """获取账号详细信息"""
+    return await admin.get_account_detail(account_id)
+
+
+@app.get("/api/quota")
+async def api_quota_status():
+    """获取配额状态"""
+    return await admin.get_quota_status()
 
 
 @app.get("/api/kiro/login-url")

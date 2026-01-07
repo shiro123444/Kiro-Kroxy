@@ -4,7 +4,9 @@ from pathlib import Path
 KIRO_API_URL = "https://q.us-east-1.amazonaws.com/generateAssistantResponse"
 MODELS_URL = "https://q.us-east-1.amazonaws.com/ListAvailableModels"
 TOKEN_PATH = Path.home() / ".aws/sso/cache/kiro-auth-token.json"
-MACHINE_ID = "fa41d5def91e29225c73f6ea8ee0941a87bd812aae5239e3dde72c3ba7603a26"
+
+# 配额管理配置
+QUOTA_COOLDOWN_SECONDS = 300  # 配额超限冷却时间（秒）
 
 # 模型映射
 MODEL_MAPPING = {

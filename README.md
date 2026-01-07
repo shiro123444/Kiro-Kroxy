@@ -5,7 +5,7 @@
 <h1 align="center">Kiro API Proxy</h1>
 
 <p align="center">
-  Kiro IDE API 反向代理服务器，支持多账号轮询、会话粘性、429自动切换
+  Kiro IDE API 反向代理服务器，支持多账号轮询、Token 自动刷新、配额管理
 </p>
 
 <p align="center">
@@ -26,14 +26,20 @@
 
 ## 功能特性
 
+### 核心功能
 - **多协议支持** - OpenAI / Anthropic / Gemini 三种协议兼容
-- **工具调用支持** - 支持 Claude Code 的工具调用功能 (v1.2.1+)
+- **工具调用支持** - 支持 Claude Code 的工具调用功能
 - **多账号轮询** - 支持添加多个 Kiro 账号，自动负载均衡
 - **会话粘性** - 同一会话 60 秒内使用同一账号，保持上下文
-- **429 自动切换** - 遇到限流自动切换到其他可用账号
 - **Web UI** - 简洁的管理界面，支持对话测试、监控、日志查看
-- **Token 扫描** - 自动扫描系统中的 Kiro token 文件
-- **跨平台** - 支持 Windows / macOS / Linux
+
+### v1.3.0 新功能
+- **Token 自动刷新** - 检测过期自动刷新，支持 Social 认证
+- **动态 Machine ID** - 每个账号独立指纹，基于凭证 + 时间因子生成
+- **配额管理** - 429 自动检测、冷却 (300s)、自动恢复
+- **自动账号切换** - 配额超限时自动切换到下一个可用账号
+- **配置持久化** - 账号配置保存到 `~/.kiro-proxy/config.json`，重启不丢失
+- **凭证状态管理** - Active / Cooldown / Unhealthy / Disabled 四种状态
 
 ## 已知限制
 
@@ -49,24 +55,9 @@ Input is too long. (CONTENT_LENGTH_EXCEEDS_THRESHOLD)
 
 #### 解决方案
 
-1. **清空对话历史**
-   - 在 Claude Code 中输入 `/clear` 清空当前会话
-   
-2. **恢复工作进度**
-   - 清空后，告诉 Claude 你之前在做什么，它会读取代码文件恢复上下文
-   
-   示例：
-   ```
-   继续之前的工作。我正在：
-   - 开发 XXX 功能
-   - 修复 YYY 问题
-   
-   请查看当前代码状态，继续完成未完成的任务。
-   ```
-
-3. **预防措施**
-   - 复杂任务分阶段完成，每个阶段结束后 `/clear` 开始新会话
-   - 定期提交代码到 git，方便恢复和追踪进度
+1. **清空对话历史** - 在 Claude Code 中输入 `/clear` 清空当前会话
+2. **恢复工作进度** - 清空后，告诉 Claude 你之前在做什么，它会读取代码文件恢复上下文
+3. **预防措施** - 复杂任务分阶段完成，每个阶段结束后 `/clear` 开始新会话
 
 ## 快速开始
 
@@ -88,7 +79,7 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 # 安装依赖
 pip install -r requirements.txt
 
-# 运行 (新版)
+# 运行
 python run.py
 
 # 或指定端口
@@ -108,12 +99,12 @@ python run.py 8081
 
 ### 模型对照表
 
-| Kiro 模型 | 能力 | Claude Code | Codex | Gemini CLI |
-|-----------|------|-------------|-------|------------|
-| `claude-sonnet-4` | ⭐⭐⭐ 推荐 | `claude-sonnet-4` | `gpt-4o` | `gemini-2.0-flash` |
-| `claude-sonnet-4.5` | ⭐⭐⭐⭐ 更强 | `claude-sonnet-4.5` | `gpt-4o` | `gemini-1.5-pro` |
-| `claude-haiku-4.5` | ⚡ 快速 | `claude-haiku-4.5` | `gpt-4o-mini` | `gemini-1.5-flash` |
-| `claude-opus-4.5` | ⭐⭐⭐⭐⭐ 最强 | `claude-opus-4.5` | `o1` | `gemini-2.0-flash-thinking` |
+| Kiro 模型 | 能力 | Claude Code | Codex |
+|-----------|------|-------------|-------|
+| `claude-sonnet-4` | ⭐⭐⭐ 推荐 | `claude-sonnet-4` | `gpt-4o` |
+| `claude-sonnet-4.5` | ⭐⭐⭐⭐ 更强 | `claude-sonnet-4.5` | `gpt-4o` |
+| `claude-haiku-4.5` | ⚡ 快速 | `claude-haiku-4.5` | `gpt-4o-mini` |
+| `claude-opus-4.5` | ⭐⭐⭐⭐⭐ 最强 | `claude-opus-4.5` | `o1` |
 
 ### Claude Code 配置
 
@@ -133,76 +124,63 @@ Endpoint: http://localhost:8080/v1
 模型: gpt-4o
 ```
 
-### Gemini CLI 配置
-
-```
-名称: Kiro Proxy
-API Key: any
-Base URL: http://localhost:8080
-模型: gemini-2.0-flash
-```
-
 ## API 端点
 
 | 协议 | 端点 | 用途 |
 |------|------|------|
 | OpenAI | `POST /v1/chat/completions` | Codex CLI |
 | OpenAI | `GET /v1/models` | 模型列表 |
-| Anthropic | `POST /v1/messages` | Claude Code CLI |
+| Anthropic | `POST /v1/messages` | Claude Code |
+| Anthropic | `POST /v1/messages/count_tokens` | Token 计数 |
 | Gemini | `POST /v1/models/{model}:generateContent` | Gemini CLI |
 
-### cURL 示例
+### 管理 API
 
-```bash
-# OpenAI 格式
-curl http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model": "claude-sonnet-4", "messages": [{"role": "user", "content": "Hello"}]}'
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/accounts` | GET | 获取所有账号状态 |
+| `/api/accounts/{id}` | GET | 获取账号详情 |
+| `/api/accounts/{id}/refresh` | POST | 刷新账号 Token |
+| `/api/accounts/{id}/restore` | POST | 恢复账号（从冷却状态） |
+| `/api/accounts/refresh-all` | POST | 刷新所有即将过期的 Token |
+| `/api/quota` | GET | 获取配额状态 |
+| `/api/stats` | GET | 获取统计信息 |
+| `/api/logs` | GET | 获取请求日志 |
 
-# Anthropic 格式
-curl http://localhost:8080/v1/messages \
-  -H "Content-Type: application/json" \
-  -H "x-api-key: any" \
-  -H "anthropic-version: 2023-06-01" \
-  -d '{"model": "claude-sonnet-4", "max_tokens": 1024, "messages": [{"role": "user", "content": "Hello"}]}'
-```
-
-### Python 示例
-
-```python
-from openai import OpenAI
-
-client = OpenAI(base_url="http://localhost:8080/v1", api_key="not-needed")
-response = client.chat.completions.create(
-    model="claude-sonnet-4",
-    messages=[{"role": "user", "content": "Hello"}]
-)
-print(response.choices[0].message.content)
-```
-
-## 构建
-
-### 项目结构
+## 项目结构
 
 ```
 kiro_proxy/
-├── __init__.py          # 版本信息
-├── config.py            # 配置和模型映射
-├── models.py            # 数据模型
-├── kiro_api.py          # Kiro API 调用
-├── converters.py        # 协议转换
-├── handlers/
-│   ├── anthropic.py     # /v1/messages (支持工具调用)
-│   ├── openai.py        # /v1/chat/completions
-│   ├── gemini.py        # /v1/models/{model}:generateContent
-│   └── admin.py         # 管理 API
-├── web/
-│   └── html.py          # Web UI
-└── main.py              # FastAPI 应用
-run.py                   # 启动脚本
+├── main.py                    # FastAPI 应用入口
+├── config.py                  # 全局配置
+├── converters.py              # 协议转换
+│
+├── core/                      # 核心模块
+│   ├── account.py            # 账号管理
+│   ├── state.py              # 全局状态
+│   └── persistence.py        # 配置持久化
+│
+├── credential/                # 凭证管理
+│   ├── types.py              # KiroCredentials
+│   ├── fingerprint.py        # Machine ID 生成
+│   ├── quota.py              # 配额管理器
+│   └── refresher.py          # Token 刷新
+│
+├── providers/                 # Provider 抽象
+│   ├── base.py               # BaseProvider 基类
+│   └── kiro.py               # Kiro Provider
+│
+├── handlers/                  # API 处理器
+│   ├── anthropic.py          # /v1/messages
+│   ├── openai.py             # /v1/chat/completions
+│   ├── gemini.py             # /v1/models/{model}:generateContent
+│   └── admin.py              # 管理 API
+│
+└── web/
+    └── html.py               # Web UI (组件化单文件)
 ```
 
-### 构建可执行文件
+## 构建
 
 ```bash
 # 安装构建依赖

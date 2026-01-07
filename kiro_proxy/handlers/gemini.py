@@ -7,7 +7,8 @@ import httpx
 from fastapi import Request, HTTPException
 
 from ..config import KIRO_API_URL, map_model_name
-from ..models import state, RequestLog
+from ..core import state
+from ..core.state import RequestLog
 from ..kiro_api import build_headers, build_kiro_request, parse_event_stream
 from ..converters import convert_gemini_contents_to_kiro
 

@@ -8,8 +8,9 @@ from datetime import datetime
 from dataclasses import asdict
 from fastapi import Request, HTTPException, Query
 
-from ..config import TOKEN_PATH, MODELS_URL, MACHINE_ID
-from ..models import state, Account
+from ..config import TOKEN_PATH, MODELS_URL
+from ..core import state, Account
+from ..credential import quota_manager, generate_machine_id, get_kiro_version
 
 
 async def get_status():
@@ -41,22 +42,44 @@ async def get_logs(limit: int = Query(100, le=1000)):
 
 
 async def get_accounts():
-    """获取账号列表"""
+    """获取账号列表（增强版）"""
     return {
-        "accounts": [
-            {
-                "id": a.id,
-                "name": a.name,
-                "enabled": a.enabled,
-                "available": a.is_available(),
-                "request_count": a.request_count,
-                "error_count": a.error_count,
-                "rate_limited": a.rate_limited_until > time.time() if a.rate_limited_until else False,
-                "rate_limited_until": a.rate_limited_until
-            }
-            for a in state.accounts
-        ]
+        "accounts": state.get_accounts_status()
     }
+
+
+async def get_account_detail(account_id: str):
+    """获取账号详细信息"""
+    for acc in state.accounts:
+        if acc.id == account_id:
+            creds = acc.get_credentials()
+            return {
+                "id": acc.id,
+                "name": acc.name,
+                "enabled": acc.enabled,
+                "status": acc.status.value,
+                "available": acc.is_available(),
+                "request_count": acc.request_count,
+                "error_count": acc.error_count,
+                "last_used": acc.last_used,
+                "token_path": acc.token_path,
+                "machine_id": acc.get_machine_id()[:16] + "...",
+                "credentials": {
+                    "has_access_token": bool(creds and creds.access_token),
+                    "has_refresh_token": bool(creds and creds.refresh_token),
+                    "has_client_id": bool(creds and creds.client_id),
+                    "auth_method": creds.auth_method if creds else None,
+                    "region": creds.region if creds else None,
+                    "expires_at": creds.expires_at if creds else None,
+                    "is_expired": acc.is_token_expired(),
+                    "is_expiring_soon": acc.is_token_expiring_soon(),
+                } if creds else None,
+                "cooldown": {
+                    "is_cooldown": not quota_manager.is_available(acc.id),
+                    "remaining_seconds": quota_manager.get_cooldown_remaining(acc.id),
+                }
+            }
+    raise HTTPException(404, "Account not found")
 
 
 async def add_account(request: Request):
@@ -74,12 +97,23 @@ async def add_account(request: Request):
         token_path=token_path
     )
     state.accounts.append(account)
-    return {"ok": True, "account": asdict(account)}
+    
+    # 预加载凭证
+    account.load_credentials()
+    
+    # 保存配置
+    state._save_accounts()
+    
+    return {"ok": True, "account_id": account.id}
 
 
 async def delete_account(account_id: str):
     """删除账号"""
     state.accounts = [a for a in state.accounts if a.id != account_id]
+    # 清理配额记录
+    quota_manager.restore(account_id)
+    # 保存配置
+    state._save_accounts()
     return {"ok": True}
 
 
@@ -88,8 +122,38 @@ async def toggle_account(account_id: str):
     for acc in state.accounts:
         if acc.id == account_id:
             acc.enabled = not acc.enabled
+            # 保存配置
+            state._save_accounts()
             return {"ok": True, "enabled": acc.enabled}
     raise HTTPException(404, "Account not found")
+
+
+async def refresh_account_token(account_id: str):
+    """刷新指定账号的 token"""
+    success, message = await state.refresh_account_token(account_id)
+    return {"ok": success, "message": message}
+
+
+async def refresh_all_tokens():
+    """刷新所有即将过期的 token"""
+    results = await state.refresh_expiring_tokens()
+    return {
+        "ok": True,
+        "results": results,
+        "refreshed": len([r for r in results if r["success"]])
+    }
+
+
+async def restore_account(account_id: str):
+    """恢复账号（从冷却状态）"""
+    restored = quota_manager.restore(account_id)
+    if restored:
+        for acc in state.accounts:
+            if acc.id == account_id:
+                from ..credential import CredentialStatus
+                acc.status = CredentialStatus.ACTIVE
+                break
+    return {"ok": restored}
 
 
 async def speedtest():
@@ -101,9 +165,12 @@ async def speedtest():
     start = time.time()
     try:
         token = account.get_token()
+        machine_id = account.get_machine_id()
+        kiro_version = get_kiro_version()
+        
         headers = {
             "content-type": "application/json",
-            "x-amz-user-agent": f"aws-sdk-js/1.0.27 KiroIDE-0.8.0-{MACHINE_ID}",
+            "x-amz-user-agent": f"aws-sdk-js/1.0.0 KiroIDE-{kiro_version}-{machine_id}",
             "Authorization": f"Bearer {token}",
         }
         async with httpx.AsyncClient(verify=False, timeout=10) as client:
@@ -112,7 +179,8 @@ async def speedtest():
             return {
                 "ok": resp.status_code == 200,
                 "latency_ms": round(latency, 2),
-                "status": resp.status_code
+                "status": resp.status_code,
+                "account_id": account.id
             }
     except Exception as e:
         return {"ok": False, "error": str(e), "latency_ms": (time.time() - start) * 1000}
@@ -128,12 +196,17 @@ async def scan_tokens():
                 with open(f) as fp:
                     data = json.load(fp)
                     if "accessToken" in data:
+                        # 检查是否已添加
+                        already_added = any(a.token_path == str(f) for a in state.accounts)
+                        
                         found.append({
                             "path": str(f),
                             "name": f.stem,
                             "expires": data.get("expiresAt"),
-                            "provider": data.get("provider", "unknown"),
-                            "region": data.get("region", "unknown")
+                            "auth_method": data.get("authMethod", "social"),
+                            "region": data.get("region", "us-east-1"),
+                            "has_refresh_token": "refreshToken" in data,
+                            "already_added": already_added
                         })
             except:
                 pass
@@ -166,6 +239,13 @@ async def add_from_scan(request: Request):
         token_path=token_path
     )
     state.accounts.append(account)
+    
+    # 预加载凭证
+    account.load_credentials()
+    
+    # 保存配置
+    state._save_accounts()
+    
     return {"ok": True, "account_id": account.id}
 
 
@@ -197,7 +277,11 @@ async def import_config(request: Request):
                     enabled=acc_data.get("enabled", True)
                 )
                 state.accounts.append(account)
+                account.load_credentials()
                 imported += 1
+    
+    # 保存配置
+    state._save_accounts()
     
     return {"ok": True, "imported": imported}
 
@@ -206,35 +290,44 @@ async def refresh_token_check():
     """检查所有账号的 token 状态"""
     results = []
     for acc in state.accounts:
-        try:
-            with open(acc.token_path) as f:
-                data = json.load(f)
-                expires = data.get("expiresAt", "")
-                if expires:
-                    exp_time = datetime.fromisoformat(expires.replace("Z", "+00:00"))
-                    now = datetime.now(exp_time.tzinfo)
-                    is_valid = exp_time > now
-                    remaining = (exp_time - now).total_seconds() if is_valid else 0
-                else:
-                    is_valid = False
-                    remaining = 0
-                
-                results.append({
-                    "id": acc.id,
-                    "name": acc.name,
-                    "valid": is_valid,
-                    "expires": expires,
-                    "remaining_seconds": int(remaining)
-                })
-        except Exception as e:
+        creds = acc.get_credentials()
+        if creds:
+            results.append({
+                "id": acc.id,
+                "name": acc.name,
+                "valid": not acc.is_token_expired(),
+                "expiring_soon": acc.is_token_expiring_soon(),
+                "expires": creds.expires_at,
+                "auth_method": creds.auth_method,
+                "has_refresh_token": bool(creds.refresh_token),
+            })
+        else:
             results.append({
                 "id": acc.id,
                 "name": acc.name,
                 "valid": False,
-                "error": str(e)
+                "error": "无法加载凭证"
             })
     
     return {"accounts": results}
+
+
+async def get_quota_status():
+    """获取配额状态"""
+    return {
+        "cooldown_seconds": quota_manager.cooldown_seconds,
+        "exceeded_count": len(quota_manager.exceeded_records),
+        "exceeded_credentials": [
+            {
+                "credential_id": r.credential_id,
+                "exceeded_at": r.exceeded_at,
+                "cooldown_until": r.cooldown_until,
+                "remaining_seconds": max(0, int(r.cooldown_until - time.time())),
+                "reason": r.reason
+            }
+            for r in quota_manager.exceeded_records.values()
+        ]
+    }
 
 
 async def get_kiro_login_url():
