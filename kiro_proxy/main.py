@@ -2,6 +2,7 @@
 import json
 import uuid
 import httpx
+import sys
 from pathlib import Path
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, HTTPException
@@ -14,6 +15,12 @@ from .handlers import anthropic, openai, gemini, admin
 from .handlers import responses as responses_handler
 from .web.html import HTML_PAGE
 from .credential import generate_machine_id, get_kiro_version
+
+
+def get_resource_path(relative_path: str) -> Path:
+    """获取资源文件路径，支持从打包资源读取"""
+    base_path = Path(sys._MEIPASS) if hasattr(sys, '_MEIPASS') else Path(__file__).parent.parent
+    return base_path / relative_path
 
 
 @asynccontextmanager
@@ -47,7 +54,7 @@ async def index():
 @app.get("/assets/{path:path}")
 async def serve_assets(path: str):
     """提供静态资源"""
-    file_path = Path("assets") / path
+    file_path = get_resource_path("assets") / path
     if file_path.exists():
         content_type = "image/svg+xml" if path.endswith(".svg") else "application/octet-stream"
         return StreamingResponse(open(file_path, "rb"), media_type=content_type)
@@ -490,7 +497,7 @@ DOC_TITLES = {
 @app.get("/api/docs")
 async def api_docs_list():
     """获取文档列表"""
-    docs_dir = Path(__file__).parent / "docs"
+    docs_dir = get_resource_path("kiro_proxy/docs")
     docs = []
     if docs_dir.exists():
         for doc_file in sorted(docs_dir.glob("*.md")):
@@ -503,7 +510,7 @@ async def api_docs_list():
 @app.get("/api/docs/{doc_id}")
 async def api_docs_content(doc_id: str):
     """获取文档内容"""
-    docs_dir = Path(__file__).parent / "docs"
+    docs_dir = get_resource_path("kiro_proxy/docs")
     doc_file = docs_dir / f"{doc_id}.md"
     if not doc_file.exists():
         raise HTTPException(status_code=404, detail="文档不存在")

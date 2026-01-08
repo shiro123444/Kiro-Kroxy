@@ -72,6 +72,23 @@ def build_app():
         args.extend(["--icon", str(icon_file)])
         print(f"[OK] Using icon: {icon_file}")
     
+    # 添加资源文件打包
+    if (ICON_DIR).exists():
+        if platform == "windows":
+            args.extend(["--add-data", f"{ICON_DIR};assets"])
+        else:
+            args.extend(["--add-data", f"{ICON_DIR}:assets"])
+        print(f"[OK] Adding assets directory")
+    
+    # 添加文档文件打包
+    docs_dir = Path("kiro_proxy/docs")
+    if docs_dir.exists():
+        if platform == "windows":
+            args.extend(["--add-data", f"{docs_dir};kiro_proxy/docs"])
+        else:
+            args.extend(["--add-data", f"{docs_dir}:kiro_proxy/docs"])
+        print(f"[OK] Adding docs directory")
+    
     hidden_imports = [
         "uvicorn.logging",
         "uvicorn.protocols.http",
