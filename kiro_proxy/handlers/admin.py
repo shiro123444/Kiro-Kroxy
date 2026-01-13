@@ -980,7 +980,7 @@ async def complete_remote_login(session_id: str, request: Request):
 
 
 def get_remote_login_page(session_id: str) -> str:
-    """生成远程登录页面 HTML"""
+    """生成远程登录页面 HTML（使用 Device Code Flow）"""
     session = _remote_login_sessions.get(session_id)
     if not session or time.time() > session.get("expires_at", 0):
         return """
@@ -1002,100 +1002,175 @@ def get_remote_login_page(session_id: str) -> str:
         <style>
             * {{ margin: 0; padding: 0; box-sizing: border-box; }}
             body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f5f5; min-height: 100vh; display: flex; align-items: center; justify-content: center; }}
-            .card {{ background: white; border-radius: 12px; padding: 2rem; max-width: 400px; width: 90%; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
+            .card {{ background: white; border-radius: 12px; padding: 2rem; max-width: 450px; width: 90%; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }}
             h1 {{ font-size: 1.5rem; margin-bottom: 1rem; text-align: center; }}
-            p {{ color: #666; margin-bottom: 1.5rem; text-align: center; }}
+            p {{ color: #666; margin-bottom: 1rem; text-align: center; }}
             .btn {{ display: flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; background: white; cursor: pointer; font-size: 1rem; margin-bottom: 0.75rem; transition: background 0.2s; }}
             .btn:hover {{ background: #f5f5f5; }}
-            .status {{ text-align: center; padding: 1rem; background: #f0f9ff; border-radius: 8px; margin-top: 1rem; display: none; }}
+            .btn.primary {{ background: #000; color: white; border: none; }}
+            .btn.primary:hover {{ background: #333; }}
+            .btn:disabled {{ opacity: 0.5; cursor: not-allowed; }}
+            .status {{ text-align: center; padding: 1rem; border-radius: 8px; margin-top: 1rem; }}
+            .status.info {{ background: #f0f9ff; color: #0284c7; }}
+            .status.success {{ background: #f0fdf4; color: #16a34a; }}
+            .status.error {{ background: #fef2f2; color: #dc2626; }}
+            .code-display {{ font-size: 2rem; font-weight: bold; letter-spacing: 0.5rem; text-align: center; padding: 1rem; background: #f5f5f5; border-radius: 8px; margin: 1rem 0; font-family: monospace; }}
+            .divider {{ text-align: center; color: #999; margin: 1.5rem 0; position: relative; }}
+            .divider::before, .divider::after {{ content: ''; position: absolute; top: 50%; width: 40%; height: 1px; background: #ddd; }}
+            .divider::before {{ left: 0; }}
+            .divider::after {{ right: 0; }}
             .input {{ width: 100%; padding: 0.75rem; border: 1px solid #ddd; border-radius: 8px; margin-bottom: 0.75rem; font-size: 1rem; }}
-            .submit {{ background: #000; color: white; border: none; }}
-            .submit:hover {{ background: #333; }}
+            .hidden {{ display: none; }}
         </style>
     </head>
     <body>
         <div class="card">
             <h1>🔐 Kiro Proxy 远程登录</h1>
-            <p>选择登录方式完成授权</p>
             
-            <button class="btn" onclick="startLogin('google')">
-                <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>
-                Google 登录
-            </button>
+            <div id="step1">
+                <p>点击下方按钮开始登录流程</p>
+                <button class="btn primary" id="startBtn" onclick="startDeviceFlow()">开始登录</button>
+            </div>
             
-            <button class="btn" onclick="startLogin('github')">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/></svg>
-                GitHub 登录
-            </button>
+            <div id="step2" class="hidden">
+                <p>请在浏览器中输入以下验证码：</p>
+                <div class="code-display" id="userCode">----</div>
+                <p style="font-size:0.875rem">授权页面将自动打开，或点击下方按钮</p>
+                <button class="btn" id="openAuthBtn" onclick="openAuthPage()">打开授权页面</button>
+                <div class="status info" id="waitStatus">⏳ 等待授权完成...</div>
+            </div>
             
-            <div style="text-align:center;color:#999;margin:1rem 0">或</div>
+            <div id="step3" class="hidden">
+                <div class="status success">✅ 登录成功！账号已添加</div>
+                <p style="margin-top:1rem">您可以关闭此页面了</p>
+            </div>
             
-            <p style="font-size:0.875rem;margin-bottom:0.5rem">授权完成后粘贴回调 URL：</p>
-            <input type="text" class="input" id="callbackUrl" placeholder="粘贴回调 URL...">
-            <button class="btn submit" onclick="submitCallback()">提交</button>
+            <div class="divider">或</div>
             
-            <div class="status" id="status"></div>
+            <div id="manualSection">
+                <p style="font-size:0.875rem;margin-bottom:0.5rem">手动添加 Token：</p>
+                <input type="text" class="input" id="accessToken" placeholder="粘贴 accessToken...">
+                <input type="text" class="input" id="refreshToken" placeholder="粘贴 refreshToken (可选)...">
+                <button class="btn" onclick="submitManualToken()">添加账号</button>
+            </div>
+            
+            <div id="statusMsg" class="status hidden"></div>
         </div>
         
         <script>
             const sessionId = '{session_id}';
-            let authState = null;
+            let verificationUri = null;
+            let pollInterval = null;
             
-            async function startLogin(provider) {{
-                try {{
-                    const r = await fetch('/api/kiro/social/start', {{
-                        method: 'POST',
-                        headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{provider}})
-                    }});
-                    const d = await r.json();
-                    if (d.ok) {{
-                        authState = d.state;
-                        window.open(d.login_url, '_blank');
-                        showStatus('请在新窗口完成授权，然后粘贴回调 URL', 'info');
-                    }} else {{
-                        showStatus('启动登录失败: ' + d.error, 'error');
-                    }}
-                }} catch(e) {{
-                    showStatus('启动登录失败: ' + e.message, 'error');
-                }}
-            }}
-            
-            async function submitCallback() {{
-                const url = document.getElementById('callbackUrl').value;
-                if (!url) {{ showStatus('请粘贴回调 URL', 'error'); return; }}
+            async function startDeviceFlow() {{
+                const btn = document.getElementById('startBtn');
+                btn.disabled = true;
+                btn.textContent = '启动中...';
                 
                 try {{
-                    const urlObj = new URL(url);
-                    const code = urlObj.searchParams.get('code');
-                    const state = urlObj.searchParams.get('state');
-                    if (!code || !state) {{ showStatus('无效的回调 URL', 'error'); return; }}
-                    
-                    showStatus('正在验证...', 'info');
-                    
-                    const r = await fetch('/api/remote-login/' + sessionId + '/complete', {{
+                    const r = await fetch('/api/kiro/login/start', {{
                         method: 'POST',
                         headers: {{'Content-Type': 'application/json'}},
-                        body: JSON.stringify({{code, state}})
+                        body: JSON.stringify({{}})
                     }});
                     const d = await r.json();
                     
-                    if (d.ok && d.completed) {{
-                        showStatus('✅ 登录成功！可以关闭此页面', 'success');
+                    if (d.ok) {{
+                        document.getElementById('step1').classList.add('hidden');
+                        document.getElementById('step2').classList.remove('hidden');
+                        document.getElementById('userCode').textContent = d.user_code;
+                        verificationUri = d.verification_uri;
+                        
+                        // 自动打开授权页面
+                        window.open(verificationUri, '_blank');
+                        
+                        // 开始轮询
+                        startPolling();
                     }} else {{
-                        showStatus('❌ ' + (d.error || '登录失败'), 'error');
+                        showError('启动失败: ' + d.error);
+                        btn.disabled = false;
+                        btn.textContent = '开始登录';
                     }}
                 }} catch(e) {{
-                    showStatus('处理失败: ' + e.message, 'error');
+                    showError('网络错误: ' + e.message);
+                    btn.disabled = false;
+                    btn.textContent = '开始登录';
                 }}
             }}
             
-            function showStatus(msg, type) {{
-                const el = document.getElementById('status');
-                el.style.display = 'block';
-                el.textContent = msg;
-                el.style.background = type === 'error' ? '#fef2f2' : type === 'success' ? '#f0fdf4' : '#f0f9ff';
-                el.style.color = type === 'error' ? '#dc2626' : type === 'success' ? '#16a34a' : '#0284c7';
+            function openAuthPage() {{
+                if (verificationUri) {{
+                    window.open(verificationUri, '_blank');
+                }}
+            }}
+            
+            function startPolling() {{
+                pollInterval = setInterval(async () => {{
+                    try {{
+                        const r = await fetch('/api/kiro/login/poll');
+                        const d = await r.json();
+                        
+                        if (d.ok && d.completed) {{
+                            clearInterval(pollInterval);
+                            // 更新远程登录状态
+                            await fetch('/api/remote-login/' + sessionId + '/complete', {{
+                                method: 'POST',
+                                headers: {{'Content-Type': 'application/json'}},
+                                body: JSON.stringify({{device_flow_completed: true, account_id: d.account_id}})
+                            }});
+                            
+                            document.getElementById('step2').classList.add('hidden');
+                            document.getElementById('step3').classList.remove('hidden');
+                            document.getElementById('manualSection').classList.add('hidden');
+                        }} else if (!d.ok) {{
+                            clearInterval(pollInterval);
+                            showError(d.error || '轮询失败');
+                        }}
+                    }} catch(e) {{
+                        // 忽略网络错误，继续轮询
+                    }}
+                }}, 3000);
+            }}
+            
+            async function submitManualToken() {{
+                const accessToken = document.getElementById('accessToken').value.trim();
+                const refreshToken = document.getElementById('refreshToken').value.trim();
+                
+                if (!accessToken) {{
+                    showError('请输入 accessToken');
+                    return;
+                }}
+                
+                try {{
+                    const r = await fetch('/api/accounts/manual', {{
+                        method: 'POST',
+                        headers: {{'Content-Type': 'application/json'}},
+                        body: JSON.stringify({{
+                            access_token: accessToken,
+                            refresh_token: refreshToken,
+                            name: '远程登录账号'
+                        }})
+                    }});
+                    const d = await r.json();
+                    
+                    if (d.ok) {{
+                        document.getElementById('step1').classList.add('hidden');
+                        document.getElementById('step2').classList.add('hidden');
+                        document.getElementById('step3').classList.remove('hidden');
+                        document.getElementById('manualSection').classList.add('hidden');
+                    }} else {{
+                        showError(d.error || '添加失败');
+                    }}
+                }} catch(e) {{
+                    showError('网络错误: ' + e.message);
+                }}
+            }}
+            
+            function showError(msg) {{
+                const el = document.getElementById('statusMsg');
+                el.className = 'status error';
+                el.textContent = '❌ ' + msg;
+                el.classList.remove('hidden');
             }}
         </script>
     </body>
