@@ -1530,47 +1530,51 @@ def get_html_page() -> str:
     
     lang = get_current_lang()
     
+    # 转义 JavaScript 字符串中的特殊字符
+    def js_escape(s):
+        return s.replace('\\', '\\\\').replace('"', '\\"').replace('\n', '\\n').replace('\r', '')
+    
     # 生成 JavaScript 中的翻译函数
     js_i18n = f'''
 // i18n 翻译
 const LANG = "{lang}";
 const I18N = {{
-  "status.connected": "{t('status.connected')}",
-  "status.noAccounts": "{t('status.noAccounts')}",
-  "status.disconnected": "{t('status.disconnected')}",
-  "status.failed": "{t('status.failed')}",
-  "status.port": "{t('status.port')}",
-  "status.running": "{t('status.running')}",
-  "common.copied": "{t('common.copied')}",
-  "common.enabled": "{t('common.enabled')}",
-  "common.disabled": "{t('common.disabled')}",
-  "common.delete": "{t('common.delete')}",
-  "common.loading": "{t('common.loading')}",
-  "accounts.available": "{t('accounts.available')}",
-  "accounts.cooldown": "{t('accounts.cooldown')}",
-  "accounts.unhealthy": "{t('accounts.unhealthy')}",
-  "accounts.suspended": "{t('accounts.suspended')}",
-  "accounts.requests": "{t('accounts.requests')}",
-  "accounts.errors": "{t('accounts.errors')}",
-  "accounts.token": "{t('accounts.token')}",
-  "accounts.tokenValid": "{t('accounts.tokenValid')}",
-  "accounts.tokenExpiring": "{t('accounts.tokenExpiring')}",
-  "accounts.tokenExpired": "{t('accounts.tokenExpired')}",
-  "accounts.queryUsage": "{t('accounts.queryUsage')}",
-  "accounts.refreshToken": "{t('accounts.refreshToken')}",
-  "accounts.details": "{t('accounts.details')}",
-  "accounts.restore": "{t('accounts.restore')}",
-  "accounts.noAccounts": "{t('accounts.noAccounts')}",
-  "accounts.scan": "{t('accounts.scan')}",
-  "accounts.alreadyAdded": "{t('accounts.alreadyAdded')}",
-  "msg.confirmDelete": "{t('msg.confirmDelete')}",
-  "msg.refreshSuccess": "{t('msg.refreshSuccess')}",
-  "msg.refreshFailed": "{t('msg.refreshFailed')}",
-  "msg.scanFailed": "{t('msg.scanFailed')}",
-  "msg.noTokensFound": "{t('msg.noTokensFound')}",
-  "time.seconds": "{t('time.seconds')}",
-  "time.minutes": "{t('time.minutes')}",
-  "time.hours": "{t('time.hours')}"
+  "status.connected": "{js_escape(t('status.connected'))}",
+  "status.noAccounts": "{js_escape(t('status.noAccounts'))}",
+  "status.disconnected": "{js_escape(t('status.disconnected'))}",
+  "status.failed": "{js_escape(t('status.failed'))}",
+  "status.port": "{js_escape(t('status.port'))}",
+  "status.running": "{js_escape(t('status.running'))}",
+  "common.copied": "{js_escape(t('common.copied'))}",
+  "common.enabled": "{js_escape(t('common.enabled'))}",
+  "common.disabled": "{js_escape(t('common.disabled'))}",
+  "common.delete": "{js_escape(t('common.delete'))}",
+  "common.loading": "{js_escape(t('common.loading'))}",
+  "accounts.available": "{js_escape(t('accounts.available'))}",
+  "accounts.cooldown": "{js_escape(t('accounts.cooldown'))}",
+  "accounts.unhealthy": "{js_escape(t('accounts.unhealthy'))}",
+  "accounts.suspended": "{js_escape(t('accounts.suspended'))}",
+  "accounts.requests": "{js_escape(t('accounts.requests'))}",
+  "accounts.errors": "{js_escape(t('accounts.errors'))}",
+  "accounts.token": "{js_escape(t('accounts.token'))}",
+  "accounts.tokenValid": "{js_escape(t('accounts.tokenValid'))}",
+  "accounts.tokenExpiring": "{js_escape(t('accounts.tokenExpiring'))}",
+  "accounts.tokenExpired": "{js_escape(t('accounts.tokenExpired'))}",
+  "accounts.queryUsage": "{js_escape(t('accounts.queryUsage'))}",
+  "accounts.refreshToken": "{js_escape(t('accounts.refreshToken'))}",
+  "accounts.details": "{js_escape(t('accounts.details'))}",
+  "accounts.restore": "{js_escape(t('accounts.restore'))}",
+  "accounts.noAccounts": "{js_escape(t('accounts.noAccounts'))}",
+  "accounts.scan": "{js_escape(t('accounts.scan'))}",
+  "accounts.alreadyAdded": "{js_escape(t('accounts.alreadyAdded'))}",
+  "msg.confirmDelete": "{js_escape(t('msg.confirmDelete'))}",
+  "msg.refreshSuccess": "{js_escape(t('msg.refreshSuccess'))}",
+  "msg.refreshFailed": "{js_escape(t('msg.refreshFailed'))}",
+  "msg.scanFailed": "{js_escape(t('msg.scanFailed'))}",
+  "msg.noTokensFound": "{js_escape(t('msg.noTokensFound'))}",
+  "time.seconds": "{js_escape(t('time.seconds'))}",
+  "time.minutes": "{js_escape(t('time.minutes'))}",
+  "time.hours": "{js_escape(t('time.hours'))}"
 }};
 function _(key) {{ return I18N[key] || key; }}
 '''
