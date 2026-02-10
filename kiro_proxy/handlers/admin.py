@@ -848,17 +848,32 @@ async def add_manual_token(request: Request):
     access_token = body.get("access_token", "").strip()
     refresh_token = body.get("refresh_token", "").strip()
     name = body.get("name", "手动添加账号")
+    auth_method = body.get("auth_method", "social")
+    client_id = body.get("client_id", "").strip()
+    client_secret = body.get("client_secret", "").strip()
     
     if not access_token:
         raise HTTPException(400, "缺少 access_token")
     
-    # 保存凭证到文件
-    file_path = await save_credentials_to_file({
+    # BuilderId 认证需要 clientId 和 clientSecret
+    if auth_method == "idc" and (not client_id or not client_secret):
+        raise HTTPException(400, "BuilderId 认证需要提供 client_id 和 client_secret")
+    
+    # 构建凭证数据
+    credentials = {
         "accessToken": access_token,
         "refreshToken": refresh_token if refresh_token else None,
         "region": body.get("region", "us-east-1"),
-        "authMethod": "social",
-    }, f"manual-{uuid.uuid4().hex[:8]}")
+        "authMethod": auth_method,
+    }
+    
+    # 如果是 IdC 认证，添加 clientId 和 clientSecret
+    if auth_method == "idc":
+        credentials["clientId"] = client_id
+        credentials["clientSecret"] = client_secret
+    
+    # 保存凭证到文件
+    file_path = await save_credentials_to_file(credentials, f"manual-{uuid.uuid4().hex[:8]}")
     
     # 添加账号
     account = Account(

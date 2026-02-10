@@ -13,15 +13,17 @@
   - `docs/` - 文档目录
   - 完整的项目结构文档
 - 兼容不带 `/v1` 前缀的 API 路径（支持 Obsidian Copilot）
+- **手动添加 Token 支持 AWS BuilderId** - 前端新增认证方式选择和 clientId/clientSecret 字段
 
 ### Changed
-- 优化 README 结构，添加后台服务章节
+- 优化 README 结构，添加后台服务章节和项目更新维护指南
 - 改进服务安装脚本的依赖检查
 - 更新 .gitignore，排除生成的服务文件
 
 ### Fixed
 - 修复服务状态检查脚本的字段名错误
 - 修复虚拟环境检测逻辑
+- **修复 BuilderId Token 刷新失败** - 手动添加时支持完整的 OIDC 凭据（clientId + clientSecret）
 
 ## [1.7.2] - 2024-XX-XX
 

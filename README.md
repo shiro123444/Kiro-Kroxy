@@ -514,6 +514,258 @@ python build.py
 
 ---
 
+## 项目更新与维护
+
+### 更新到最新版本
+
+#### 从源码运行的用户
+
+```bash
+# 1. 进入项目目录
+cd KiroProxy
+
+# 2. 停止正在运行的服务
+# 如果是前台运行，按 Ctrl+C
+# 如果是后台服务，参考下方"后台服务更新"
+
+# 3. 备份配置（可选但推荐）
+cp -r ~/.kiro-proxy ~/.kiro-proxy.backup
+
+# 4. 拉取最新代码
+git pull origin main
+
+# 5. 更新依赖
+# 如果使用虚拟环境
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt --upgrade
+
+# 6. 重启服务
+python run.py
+```
+
+#### 后台服务更新
+
+**Windows**
+```cmd
+# 1. 停止服务
+schtasks /End /TN KiroProxyService
+
+# 2. 更新代码和依赖（同上）
+cd E:\shiro\KiroProxy
+git pull origin main
+venv\Scripts\activate
+pip install -r requirements.txt --upgrade
+
+# 3. 重新安装服务（会自动覆盖）
+python scripts\install_service.py
+
+# 4. 启动服务
+schtasks /Run /TN KiroProxyService
+```
+
+**Linux**
+```bash
+# 1. 停止服务
+sudo systemctl stop kiro-proxy
+
+# 2. 更新代码和依赖
+cd /path/to/KiroProxy
+git pull origin main
+source venv/bin/activate
+pip install -r requirements.txt --upgrade
+
+# 3. 重启服务
+sudo systemctl restart kiro-proxy
+
+# 4. 查看状态
+sudo systemctl status kiro-proxy
+```
+
+### 重要更新说明
+
+#### v1.7.x → 最新版本
+
+**新增功能**：
+- ✅ 手动添加 Token 支持 AWS BuilderId (IdC) 认证
+  - 需要提供 `clientId` 和 `clientSecret` 才能刷新 Token
+  - Web UI 新增认证方式选择
+- ✅ 多语言支持和双语启动器
+- ✅ Windows 兼容性增强
+
+**配置兼容性**：
+- ✅ 账号配置完全兼容，无需重新添加
+- ✅ 旧版本手动添加的 BuilderId 账号可能无法刷新（缺少 clientId/clientSecret）
+  - 解决方案：删除后重新添加，或使用「在线登录」/「扫描 Token」
+
+**数据迁移**：
+- 无需手动迁移，配置文件自动兼容
+
+#### v1.6.x → v1.7.x
+
+**新增功能**：
+- ✅ 历史消息管理（4 种策略）
+- ✅ 请求限速和账号封禁检测
+- ✅ 用量查询和流量监控
+
+**配置兼容性**：
+- ✅ 完全向后兼容
+- ✅ 新增配置项有默认值
+
+### 服务器部署注意事项
+
+#### 首次部署
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/petehsu/KiroProxy.git
+cd KiroProxy
+
+# 2. 创建虚拟环境
+python3 -m venv venv
+source venv/bin/activate
+
+# 3. 安装依赖
+pip install -r requirements.txt
+
+# 4. 添加账号（使用 CLI）
+python run.py accounts add
+# 或导入已有配置
+python run.py accounts import accounts.json
+
+# 5. 安装为系统服务
+sudo python3 scripts/install_service.py
+
+# 6. 启动服务
+sudo systemctl start kiro-proxy
+```
+
+#### 更新已部署的服务
+
+```bash
+# 1. 停止服务
+sudo systemctl stop kiro-proxy
+
+# 2. 备份配置
+cp -r ~/.kiro-proxy ~/.kiro-proxy.backup
+
+# 3. 拉取最新代码
+cd /path/to/KiroProxy
+git pull origin main
+
+# 4. 激活虚拟环境并更新依赖
+source venv/bin/activate
+pip install -r requirements.txt --upgrade
+
+# 5. 检查配置文件
+python run.py status
+
+# 6. 重启服务
+sudo systemctl restart kiro-proxy
+
+# 7. 验证服务状态
+sudo systemctl status kiro-proxy
+sudo journalctl -u kiro-proxy -f
+```
+
+#### 回滚到旧版本
+
+```bash
+# 1. 停止服务
+sudo systemctl stop kiro-proxy
+
+# 2. 回滚代码
+cd /path/to/KiroProxy
+git log --oneline  # 查看提交历史
+git checkout <commit-hash>  # 回滚到指定版本
+
+# 3. 恢复依赖
+source venv/bin/activate
+pip install -r requirements.txt --force-reinstall
+
+# 4. 恢复配置（如果需要）
+cp -r ~/.kiro-proxy.backup ~/.kiro-proxy
+
+# 5. 重启服务
+sudo systemctl restart kiro-proxy
+```
+
+### 配置文件位置
+
+| 配置项 | 路径 | 说明 |
+|-------|------|------|
+| 账号配置 | `~/.kiro-proxy/config.json` | 账号列表和设置 |
+| Token 文件 | `~/.aws/sso/cache/*.json` | Kiro 凭证文件 |
+| 服务配置 (Windows) | 任务计划程序 | `KiroProxyService` |
+| 服务配置 (Linux) | `/etc/systemd/system/kiro-proxy.service` | systemd 服务文件 |
+
+### 常见问题
+
+#### Q: 更新后账号无法刷新 Token？
+
+**A**: 如果是手动添加的 AWS BuilderId 账号，可能缺少 `clientId` 和 `clientSecret`。
+
+解决方案：
+1. 删除旧账号
+2. 使用「在线登录」或「扫描 Token」重新添加
+3. 或在「手动添加」时选择「AWS BuilderId (IdC)」并填写完整信息
+
+#### Q: 更新后服务无法启动？
+
+**A**: 检查以下几点：
+1. 依赖是否正确安装：`pip list | grep -E "fastapi|httpx|uvicorn"`
+2. 虚拟环境是否激活：`which python`
+3. 配置文件是否损坏：`cat ~/.kiro-proxy/config.json`
+4. 查看错误日志：`sudo journalctl -u kiro-proxy -n 50`
+
+#### Q: 如何在不停服的情况下更新？
+
+**A**: 使用蓝绿部署：
+1. 在另一个端口启动新版本：`python run.py --no-ui 8081`
+2. 测试新版本功能
+3. 确认无误后停止旧版本，切换端口
+4. 更新客户端配置指向新端口
+
+#### Q: 更新后配置丢失？
+
+**A**: 配置文件在 `~/.kiro-proxy/` 目录，不会被 `git pull` 覆盖。如果丢失：
+1. 恢复备份：`cp -r ~/.kiro-proxy.backup ~/.kiro-proxy`
+2. 或重新导入：`python run.py accounts import accounts.json`
+
+### 开发者指南
+
+#### 本地开发
+
+```bash
+# 1. Fork 并克隆项目
+git clone https://github.com/your-username/KiroProxy.git
+cd KiroProxy
+
+# 2. 创建开发分支
+git checkout -b feature/your-feature
+
+# 3. 安装开发依赖
+pip install -r requirements.txt
+pip install pytest pytest-asyncio
+
+# 4. 运行测试
+pytest tests/
+
+# 5. 提交更改
+git add .
+git commit -m "feat: your feature description"
+git push origin feature/your-feature
+```
+
+#### 代码规范
+
+- 使用 Python 3.8+ 特性
+- 遵循 PEP 8 代码风格
+- 添加类型注解
+- 编写单元测试
+- 更新相关文档
+
+---
+
 ## 更新日志
 
 查看 [CHANGELOG.md](CHANGELOG.md) 了解版本更新历史。

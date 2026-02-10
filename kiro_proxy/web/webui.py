@@ -264,12 +264,30 @@ HTML_ACCOUNTS = '''
       <input type="text" id="manualName" placeholder="我的账号" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)">
     </div>
     <div style="margin-bottom:1rem">
+      <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">认证方式</label>
+      <select id="manualAuthMethod" onchange="toggleAuthFields()" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)">
+        <option value="social">Social Auth (Google/GitHub)</option>
+        <option value="idc">AWS BuilderId (IdC)</option>
+      </select>
+      <p style="color:var(--muted);font-size:0.75rem;margin-top:0.25rem">💡 BuilderId 需要额外提供 clientId 和 clientSecret 才能刷新 Token</p>
+    </div>
+    <div style="margin-bottom:1rem">
       <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">Access Token *</label>
       <textarea id="manualAccessToken" placeholder="粘贴 accessToken..." style="width:100%;height:80px;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-family:monospace;font-size:0.8rem"></textarea>
     </div>
     <div style="margin-bottom:1rem">
       <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">Refresh Token（可选）</label>
       <textarea id="manualRefreshToken" placeholder="粘贴 refreshToken..." style="width:100%;height:80px;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-family:monospace;font-size:0.8rem"></textarea>
+    </div>
+    <div id="idcFields" style="display:none">
+      <div style="margin-bottom:1rem">
+        <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">Client ID（BuilderId 必填）</label>
+        <input type="text" id="manualClientId" placeholder="粘贴 clientId..." style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-family:monospace;font-size:0.8rem">
+      </div>
+      <div style="margin-bottom:1rem">
+        <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">Client Secret（BuilderId 必填）</label>
+        <input type="text" id="manualClientSecret" placeholder="粘贴 clientSecret..." style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-family:monospace;font-size:0.8rem">
+      </div>
     </div>
     <p style="color:var(--muted);font-size:0.75rem;margin-bottom:1rem">Token 可从 ~/.aws/sso/cache/ 目录下的 JSON 文件中获取</p>
     <button onclick="submitManualToken()">添加账号</button>
@@ -1036,18 +1054,49 @@ function showManualAdd(){
   $('#manualName').value='';
   $('#manualAccessToken').value='';
   $('#manualRefreshToken').value='';
+  $('#manualClientId').value='';
+  $('#manualClientSecret').value='';
+  $('#manualAuthMethod').value='social';
+  toggleAuthFields();
+}
+
+function toggleAuthFields(){
+  const authMethod=$('#manualAuthMethod').value;
+  $('#idcFields').style.display=authMethod==='idc'?'block':'none';
 }
 
 async function submitManualToken(){
   const name=$('#manualName').value||'手动添加账号';
   const accessToken=$('#manualAccessToken').value.trim();
   const refreshToken=$('#manualRefreshToken').value.trim();
+  const authMethod=$('#manualAuthMethod').value;
+  const clientId=$('#manualClientId').value.trim();
+  const clientSecret=$('#manualClientSecret').value.trim();
+  
   if(!accessToken){alert('请输入 Access Token');return;}
+  
+  if(authMethod==='idc' && (!clientId || !clientSecret)){
+    alert('BuilderId 认证需要提供 Client ID 和 Client Secret');
+    return;
+  }
+  
   try{
+    const payload={
+      name,
+      access_token:accessToken,
+      refresh_token:refreshToken,
+      auth_method:authMethod
+    };
+    
+    if(authMethod==='idc'){
+      payload.client_id=clientId;
+      payload.client_secret=clientSecret;
+    }
+    
     const r=await fetch('/api/accounts/manual',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({name,access_token:accessToken,refresh_token:refreshToken})
+      body:JSON.stringify(payload)
     });
     const d=await r.json();
     if(d.ok){
