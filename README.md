@@ -11,8 +11,9 @@
 <p align="center">
   <a href="#功能特性">功能</a> •
   <a href="#快速开始">快速开始</a> •
-  <a href="#cli-配置">CLI 配置</a> •
-  <a href="#api-端点">API</a> •
+  <a href="#后台服务">后台服务</a> •
+  <a href="#客户端配置">客户端配置</a> •
+  <a href="#项目结构">项目结构</a> •
   <a href="#许可证">许可证</a>
 </p>
 
@@ -151,7 +152,9 @@ Input is too long. (CONTENT_LENGTH_EXCEEDS_THRESHOLD)
 
 ## 快速开始
 
-### 方式一：下载预编译版本
+> 💡 **推荐使用后台服务**：安装为系统服务后可开机自启、后台运行，详见 [后台服务](#后台服务) 章节。
+
+### 方式一：下载预编译版本（推荐）
 
 从 [Releases](../../releases) 下载对应平台的安装包，解压后直接运行。
 
@@ -159,49 +162,29 @@ Input is too long. (CONTENT_LENGTH_EXCEEDS_THRESHOLD)
 
 ```bash
 # 克隆项目
-git clone https://github.com/yourname/kiro-proxy.git
-cd kiro-proxy
+git clone https://github.com/petehsu/KiroProxy.git
+cd KiroProxy
 
-# 创建虚拟环境
+# 创建虚拟环境（推荐）
 python -m venv venv
 source venv/bin/activate  # Windows: venv\Scripts\activate
 
 # 安装依赖
 pip install -r requirements.txt
 
-# 运行
+# 运行（会弹出端口配置界面）
 python run.py
 
-# 或指定端口
+# 或直接指定端口
 python run.py 8081
+
+# 或跳过 UI 直接启动
+python run.py --no-ui 8080
 ```
 
 启动后访问 http://localhost:8080
 
-### 命令行工具 (CLI)
-
-无 GUI 服务器可使用 CLI 管理账号：
-
-```bash
-# 账号管理
-python run.py accounts list              # 列出账号
-python run.py accounts export -o acc.json  # 导出账号
-python run.py accounts import acc.json   # 导入账号
-python run.py accounts add               # 交互式添加 Token
-python run.py accounts scan --auto       # 扫描并自动添加本地 Token
-
-# 登录
-python run.py login google               # Google 登录
-python run.py login github               # GitHub 登录
-python run.py login remote --host myserver.com:8080  # 生成远程登录链接
-
-# 服务
-python run.py serve                      # 启动服务 (默认 8080)
-python run.py serve -p 8081              # 指定端口
-python run.py status                     # 查看状态
-```
-
-### 登录获取 Token
+### 添加账号
 
 **方式一：在线登录（推荐）**
 1. 打开 Web UI，点击「在线登录」
@@ -209,23 +192,99 @@ python run.py status                     # 查看状态
 3. 在浏览器中完成授权
 4. 账号自动添加
 
-**方式二：扫描 Token**
-1. 打开 Kiro IDE，使用 Google/GitHub 账号登录
-2. 登录成功后 token 自动保存到 `~/.aws/sso/cache/`
-3. 在 Web UI 点击「扫描 Token」添加账号
+**方式二：扫描本地 Token**
+1. 如果已在 Kiro IDE 登录，Token 保存在 `~/.aws/sso/cache/`
+2. 在 Web UI 点击「扫描 Token」或运行：
+   ```bash
+   python run.py accounts scan --auto
+   ```
 
-## CLI 配置
+**方式三：手动添加**
+```bash
+python run.py accounts add
+```
+
+---
+
+## 后台服务
+
+将 Kiro Proxy 安装为系统服务，实现开机自启和后台运行。
+
+### 快速安装
+
+**Windows（需要管理员权限）**
+```cmd
+# 以管理员身份运行 CMD 或 PowerShell
+cd E:\shiro\KiroProxy
+python scripts\install_service.py
+```
+
+**Linux（需要 sudo）**
+```bash
+cd /path/to/KiroProxy
+sudo python3 scripts/install_service.py
+```
+
+### 功能特性
+
+- ✅ **开机自动启动** - 无需手动运行
+- ✅ **后台运行** - 无窗口，不占用终端
+- ✅ **虚拟环境支持** - 自动检测并使用 venv
+- ✅ **依赖检查** - 安装前自动验证
+- ✅ **持久运行** - 关闭终端不影响服务
+
+### 管理命令
+
+**Windows**
+```cmd
+# 检查状态
+python scripts\check_service.py
+
+# 立即启动
+schtasks /Run /TN KiroProxyService
+
+# 卸载服务
+python scripts\uninstall_service.py
+```
+
+**Linux**
+```bash
+# 检查状态
+python3 scripts/check_service.py
+
+# 启动/停止/重启
+sudo systemctl start kiro-proxy
+sudo systemctl stop kiro-proxy
+sudo systemctl restart kiro-proxy
+
+# 查看日志
+sudo journalctl -u kiro-proxy -f
+
+# 卸载服务
+sudo python3 scripts/uninstall_service.py
+```
+
+### 详细文档
+
+- [docs/SERVICE_GUIDE.md](docs/SERVICE_GUIDE.md) - 完整服务管理指南
+- [docs/QUICK_START_SERVICE.md](docs/QUICK_START_SERVICE.md) - 快速开始和故障排查
+
+---
+
+## 客户端配置
+
+## 客户端配置
 
 ### 模型对照表
 
-| Kiro 模型 | 能力 | Claude Code | Codex |
-|-----------|------|-------------|-------|
-| `claude-sonnet-4` | ⭐⭐⭐ 推荐 | `claude-sonnet-4` | `gpt-4o` |
-| `claude-sonnet-4.5` | ⭐⭐⭐⭐ 更强 | `claude-sonnet-4.5` | `gpt-4o` |
-| `claude-haiku-4.5` | ⚡ 快速 | `claude-haiku-4.5` | `gpt-4o-mini` |
-| `claude-opus-4.5` | ⭐⭐⭐⭐⭐ 最强 | `claude-opus-4.5` | `o1` |
+| Kiro 模型 | 能力 | Claude Code | Codex CLI | Obsidian Copilot |
+|-----------|------|-------------|-----------|------------------|
+| `claude-sonnet-4` | ⭐⭐⭐ 推荐 | `claude-sonnet-4` | `gpt-4o` | `gpt-4o` |
+| `claude-sonnet-4.5` | ⭐⭐⭐⭐ 更强 | `claude-sonnet-4.5` | `gpt-4o` | `gpt-4o` |
+| `claude-haiku-4.5` | ⚡ 快速 | `claude-haiku-4.5` | `gpt-4o-mini` | `gpt-4o-mini` |
+| `claude-opus-4.5` | ⭐⭐⭐⭐⭐ 最强 | `claude-opus-4.5` | `o1` | `o1` |
 
-### Claude Code 配置
+### Claude Code
 
 ```
 名称: Kiro Proxy
@@ -234,16 +293,14 @@ Base URL: http://localhost:8080
 模型: claude-sonnet-4
 ```
 
-### Codex 配置
-
-Codex CLI 使用 OpenAI Responses API，配置如下：
+### Codex CLI
 
 ```bash
 # 设置环境变量
 export OPENAI_API_KEY=any
 export OPENAI_BASE_URL=http://localhost:8080/v1
 
-# 运行 Codex
+# 运行
 codex
 ```
 
@@ -255,11 +312,61 @@ api_key = "any"
 base_url = "http://localhost:8080/v1"
 ```
 
+### Obsidian Copilot
+
+在 Copilot 设置中：
+
+```
+Provider: OpenAI
+API Key: any
+Base URL: http://localhost:8080
+Model: gpt-4o
+```
+
+### Cherry Studio
+
+```
+Provider: OpenAI
+API Key: any
+Base URL: http://localhost:8080/v1
+Model: gpt-4o
+```
+
+---
+
+## 命令行工具 (CLI)
+
+无 GUI 环境下使用 CLI 管理：
+
+```bash
+# 账号管理
+python run.py accounts list                    # 列出所有账号
+python run.py accounts export -o accounts.json # 导出账号配置
+python run.py accounts import accounts.json    # 导入账号配置
+python run.py accounts add                     # 交互式添加 Token
+python run.py accounts scan --auto             # 扫描并自动添加本地 Token
+
+# 登录
+python run.py login google                     # Google 登录
+python run.py login github                     # GitHub 登录
+python run.py login remote --host server:8080  # 生成远程登录链接
+
+# 服务管理
+python run.py serve                            # 启动服务 (默认 8080)
+python run.py serve -p 8081                    # 指定端口
+python run.py status                           # 查看状态
+```
+
+---
+
 ## API 端点
+
+### 客户端 API
 
 | 协议 | 端点 | 用途 |
 |------|------|------|
 | OpenAI | `POST /v1/chat/completions` | Chat Completions API |
+| OpenAI | `POST /chat/completions` | 兼容不带 /v1 前缀 |
 | OpenAI | `POST /v1/responses` | Responses API (Codex CLI) |
 | OpenAI | `GET /v1/models` | 模型列表 |
 | Anthropic | `POST /v1/messages` | Claude Code |
@@ -268,70 +375,122 @@ base_url = "http://localhost:8080/v1"
 
 ### 管理 API
 
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/accounts` | GET | 获取所有账号状态 |
-| `/api/accounts/{id}` | GET | 获取账号详情 |
-| `/api/accounts/{id}/usage` | GET | 获取账号用量信息 |
-| `/api/accounts/{id}/refresh` | POST | 刷新账号 Token |
-| `/api/accounts/{id}/restore` | POST | 恢复账号（从冷却状态） |
-| `/api/accounts/refresh-all` | POST | 刷新所有即将过期的 Token |
-| `/api/flows` | GET | 获取流量记录 |
-| `/api/flows/stats` | GET | 获取流量统计 |
-| `/api/flows/{id}` | GET | 获取流量详情 |
-| `/api/quota` | GET | 获取配额状态 |
-| `/api/stats` | GET | 获取统计信息 |
-| `/api/health-check` | POST | 手动触发健康检查 |
-| `/api/browsers` | GET | 获取可用浏览器列表 |
-| `/api/docs` | GET | 获取文档列表 |
-| `/api/docs/{id}` | GET | 获取文档内容 |
+完整 API 文档请访问 Web UI 的「文档」标签页，或查看 [docs/04-api.md](kiro_proxy/docs/04-api.md)
+
+---
 
 ## 项目结构
 
 ```
-kiro_proxy/
-├── main.py                    # FastAPI 应用入口
-├── config.py                  # 全局配置
-├── converters.py              # 协议转换
+KiroProxy/
+├── run.py                     # 主启动脚本
+├── requirements.txt           # Python 依赖
+├── build.py                   # PyInstaller 构建脚本
 │
-├── core/                      # 核心模块
-│   ├── account.py            # 账号管理
-│   ├── state.py              # 全局状态
-│   ├── persistence.py        # 配置持久化
-│   ├── scheduler.py          # 后台任务调度
-│   ├── stats.py              # 请求统计
-│   ├── retry.py              # 重试机制
-│   ├── browser.py            # 浏览器检测
-│   ├── flow_monitor.py       # 流量监控
-│   └── usage.py              # 用量查询
+├── scripts/                   # 工具脚本
+│   ├── install_service.py    # 服务安装脚本
+│   ├── uninstall_service.py  # 服务卸载脚本
+│   └── check_service.py      # 服务状态检查
 │
-├── credential/                # 凭证管理
-│   ├── types.py              # KiroCredentials
-│   ├── fingerprint.py        # Machine ID 生成
-│   ├── quota.py              # 配额管理器
-│   └── refresher.py          # Token 刷新
+├── docs/                      # 文档
+│   ├── SERVICE_GUIDE.md      # 服务管理完整指南
+│   ├── QUICK_START_SERVICE.md # 服务快速开始
+│   ├── CAPTURE_GUIDE.md      # 抓包指南
+│   └── PROJECT_OVERVIEW.md   # 项目概览
 │
-├── auth/                      # 认证模块
-│   └── device_flow.py        # Device Code Flow / Social Auth
+├── tests/                     # 测试文件
+│   ├── test_kiro_proxy.py    # 主程序测试
+│   └── test_proxy.py         # 代理测试
 │
-├── handlers/                  # API 处理器
-│   ├── anthropic.py          # /v1/messages
-│   ├── openai.py             # /v1/chat/completions
-│   ├── responses.py          # /v1/responses (Codex CLI)
-│   ├── gemini.py             # /v1/models/{model}:generateContent
-│   └── admin.py              # 管理 API
+├── tools/                     # 开发工具
+│   ├── capture_kiro.py       # 请求抓取工具
+│   ├── get_models.py         # 模型列表获取
+│   └── proxy_server.py       # 测试代理服务器
 │
-├── cli.py                     # 命令行工具
+├── kiro_proxy/                # 主程序包
+│   ├── main.py               # FastAPI 应用入口
+│   ├── config.py             # 全局配置
+│   ├── converters.py         # 协议转换
+│   ├── cli.py                # 命令行工具
+│   ├── launcher.py           # 启动器 UI
+│   │
+│   ├── core/                 # 核心模块
+│   │   ├── account.py       # 账号管理
+│   │   ├── state.py         # 全局状态
+│   │   ├── persistence.py   # 配置持久化
+│   │   ├── scheduler.py     # 后台任务调度
+│   │   ├── stats.py         # 请求统计
+│   │   ├── retry.py         # 重试机制
+│   │   ├── browser.py       # 浏览器检测
+│   │   ├── flow_monitor.py  # 流量监控
+│   │   ├── history_manager.py # 历史消息管理
+│   │   ├── rate_limiter.py  # 请求限速
+│   │   └── usage.py         # 用量查询
+│   │
+│   ├── credential/           # 凭证管理
+│   │   ├── types.py         # KiroCredentials
+│   │   ├── fingerprint.py   # Machine ID 生成
+│   │   ├── quota.py         # 配额管理器
+│   │   └── refresher.py     # Token 刷新
+│   │
+│   ├── auth/                 # 认证模块
+│   │   └── device_flow.py   # Device Code Flow / Social Auth
+│   │
+│   ├── handlers/             # API 处理器
+│   │   ├── anthropic.py     # /v1/messages
+│   │   ├── openai.py        # /v1/chat/completions
+│   │   ├── responses.py     # /v1/responses (Codex CLI)
+│   │   ├── gemini.py        # /v1/models/{model}:generateContent
+│   │   └── admin.py         # 管理 API
+│   │
+│   ├── web/                  # Web UI
+│   │   ├── webui.py         # 单文件组件化 UI
+│   │   ├── i18n.py          # 国际化
+│   │   └── i18n/            # 语言文件
+│   │       ├── zh.json
+│   │       └── en.json
+│   │
+│   └── docs/                 # 内置文档
+│       ├── zh/              # 中文文档
+│       └── en/              # 英文文档
 │
-├── docs/                      # 内置文档
-│   ├── 01-quickstart.md      # 快速开始
-│   ├── 02-features.md        # 功能特性
-│   ├── 03-faq.md             # 常见问题
-│   └── 04-api.md             # API 参考
-│
-└── web/
-    └── html.py               # Web UI (组件化单文件)
+└── assets/                   # 资源文件
+    └── icon.*               # 应用图标
 ```
+
+### 核心模块说明
+
+- **core/** - 核心业务逻辑
+  - `account.py` - 账号生命周期管理、Token 刷新、状态跟踪
+  - `state.py` - 全局状态管理、账号轮询、会话粘性
+  - `history_manager.py` - 历史消息截断、智能摘要、缓存
+  - `rate_limiter.py` - 请求限速、配额保护
+  - `flow_monitor.py` - 完整请求监控、搜索过滤
+
+- **credential/** - 凭证和认证
+  - `types.py` - KiroCredentials 数据结构
+  - `fingerprint.py` - 动态 Machine ID 生成
+  - `refresher.py` - Token 自动刷新逻辑
+
+- **handlers/** - 协议处理
+  - 每个文件处理一种协议的请求
+  - 统一的错误处理和重试机制
+  - 自动账号切换和降级
+
+- **web/** - Web 界面
+  - 单文件组件化设计
+  - 完整的国际化支持
+  - 响应式布局
+
+- **tests/** - 测试文件
+  - 单元测试
+  - 集成测试
+
+- **tools/** - 开发工具
+  - 请求抓取和分析
+  - 调试辅助工具
+
+---
 
 ## 构建
 
@@ -339,14 +498,30 @@ kiro_proxy/
 # 安装构建依赖
 pip install pyinstaller
 
-# 构建
+# 构建可执行文件
 python build.py
+
+# 输出在 dist/ 目录
 ```
 
-输出文件在 `dist/` 目录。
+---
 
 ## 免责声明
 
 本项目仅供学习研究，禁止商用。使用本项目产生的任何后果由使用者自行承担，与作者无关。
 
 本项目与 Kiro / AWS / Anthropic 官方无关。
+
+---
+
+## 更新日志
+
+查看 [CHANGELOG.md](CHANGELOG.md) 了解版本更新历史。
+
+## 贡献
+
+欢迎贡献代码！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解如何参与。
+
+## 许可证
+
+MIT License

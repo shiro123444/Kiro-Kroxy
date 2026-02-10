@@ -11,8 +11,9 @@
 <p align="center">
   <a href="#features">Features</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#cli-configuration">CLI Config</a> •
-  <a href="#api-endpoints">API</a> •
+  <a href="#background-service">Background Service</a> •
+  <a href="#client-configuration">Client Config</a> •
+  <a href="#project-structure">Structure</a> •
   <a href="#license">License</a>
 </p>
 
@@ -96,6 +97,8 @@ Built-in history management in Settings page:
 
 ## Quick Start
 
+> 💡 **Recommended: Install as Service** - Auto-start on boot and run in background. See [Background Service](#background-service) section.
+
 ### Option 1: Download Pre-built Binary
 
 Download from [Releases](../../releases) for your platform and run directly.
@@ -123,7 +126,94 @@ python run.py 8081
 
 Visit http://localhost:8080 after startup.
 
-### CLI Tools
+### Add Accounts
+
+**Option 1: Online Login (Recommended)**
+1. Open Web UI, click "Online Login"
+2. Choose: Google / GitHub / AWS Builder ID
+3. Complete authorization in browser
+4. Account added automatically
+
+**Option 2: Scan Local Tokens**
+1. If logged in Kiro IDE, tokens saved to `~/.aws/sso/cache/`
+2. Click "Scan Tokens" in Web UI or run:
+   ```bash
+   python run.py accounts scan --auto
+   ```
+
+**Option 3: Manual Add**
+```bash
+python run.py accounts add
+```
+
+---
+
+## Background Service
+
+Install Kiro Proxy as a system service for auto-start and background running.
+
+### Quick Installation
+
+**Windows (Administrator):**
+```cmd
+# Run CMD or PowerShell as Administrator
+cd E:\path\to\KiroProxy
+python scripts\install_service.py
+```
+
+**Linux (sudo required):**
+```bash
+cd /path/to/KiroProxy
+sudo python3 scripts/install_service.py
+```
+
+### Features
+
+- ✅ **Auto-start on boot** - No manual startup needed
+- ✅ **Background running** - No window, no terminal occupation
+- ✅ **Virtual environment support** - Auto-detect and use venv
+- ✅ **Dependency check** - Auto-verify before installation
+- ✅ **Persistent running** - Unaffected by terminal closure
+
+### Management Commands
+
+**Windows**
+```cmd
+# Check status
+python scripts\check_service.py
+
+# Start now
+schtasks /Run /TN KiroProxyService
+
+# Uninstall
+python scripts\uninstall_service.py
+```
+
+**Linux**
+```bash
+# Check status
+python3 scripts/check_service.py
+
+# Start/Stop/Restart
+sudo systemctl start kiro-proxy
+sudo systemctl stop kiro-proxy
+sudo systemctl restart kiro-proxy
+
+# View logs
+sudo journalctl -u kiro-proxy -f
+
+# Uninstall
+sudo python3 scripts/uninstall_service.py
+```
+
+### Detailed Documentation
+
+- [docs/SERVICE_GUIDE.md](docs/SERVICE_GUIDE.md) - Complete service management guide
+- [docs/QUICK_START_SERVICE.md](docs/QUICK_START_SERVICE.md) - Quick start and troubleshooting
+
+---
+
+## CLI Tools
 
 Manage accounts on headless servers:
 

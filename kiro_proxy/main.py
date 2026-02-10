@@ -64,6 +64,7 @@ async def serve_assets(path: str):
 # ==================== API 端点 ====================
 
 @app.get("/v1/models")
+@app.get("/models")  # 兼容不带 /v1 前缀的调用
 async def models():
     """获取可用模型列表"""
     try:
@@ -112,10 +113,12 @@ async def models():
 
 # Anthropic 协议
 @app.post("/v1/messages")
+@app.post("/messages")  # 兼容不带 /v1 前缀的调用
 async def anthropic_messages(request: Request):
     return await anthropic.handle_messages(request)
 
 @app.post("/v1/messages/count_tokens")
+@app.post("/messages/count_tokens")  # 兼容不带 /v1 前缀的调用
 async def anthropic_count_tokens(request: Request):
     return await anthropic.handle_count_tokens(request)
 
@@ -123,12 +126,14 @@ async def anthropic_count_tokens(request: Request):
 
 # OpenAI 协议
 @app.post("/v1/chat/completions")
+@app.post("/chat/completions")  # 兼容不带 /v1 前缀的调用
 async def openai_chat(request: Request):
     return await openai.handle_chat_completions(request)
 
 
 # OpenAI Responses API (Codex CLI 新版本)
 @app.post("/v1/responses")
+@app.post("/responses")  # 兼容不带 /v1 前缀的调用
 async def openai_responses(request: Request):
     return await responses_handler.handle_responses(request)
 
