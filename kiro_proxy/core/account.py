@@ -159,6 +159,7 @@ class Account:
             "token_expired": self.is_token_expired() if creds else None,
             "token_expiring_soon": self.is_token_expiring_soon() if creds else None,
             "auth_method": creds.auth_method if creds else None,
+            "provider": creds.provider if creds else None,
             "has_refresh_token": bool(creds and creds.refresh_token),
             "idc_config_complete": bool(creds and creds.client_id and creds.client_secret) if creds and creds.auth_method == "idc" else None,
         }

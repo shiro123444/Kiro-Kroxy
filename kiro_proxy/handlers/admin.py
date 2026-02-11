@@ -803,7 +803,11 @@ async def export_accounts():
 async def import_accounts(request: Request):
     """导入账号配置"""
     body = await request.json()
-    accounts_data = body.get("accounts", [])
+    
+    # 支持多种 JSON 格式
+    from ..cli import _normalize_import_data
+    accounts_data = _normalize_import_data(body)
+    
     imported = 0
     errors = []
     
@@ -814,15 +818,25 @@ async def import_accounts(request: Request):
                 errors.append(f"{acc_data.get('name', '未知')}: 缺少 accessToken")
                 continue
             
+            # 检测 provider，Enterprise/IdC 自动设置 authMethod 为 idc
+            auth_method = creds.get("authMethod", "social").lower()
+            provider = creds.get("provider")
+            if provider and provider.lower() == "enterprise":
+                auth_method = "idc"
+            elif auth_method == "idc" and not provider:
+                provider = "BuilderId"
+            
             # 保存凭证到文件
             file_path = await save_credentials_to_file({
                 "accessToken": creds.get("accessToken"),
                 "refreshToken": creds.get("refreshToken"),
                 "expiresAt": creds.get("expiresAt"),
                 "region": creds.get("region", "us-east-1"),
-                "authMethod": creds.get("authMethod", "social"),
+                "authMethod": auth_method,
+                "provider": provider,
                 "clientId": creds.get("clientId"),
                 "clientSecret": creds.get("clientSecret"),
+                "startUrl": creds.get("startUrl"),
             }, f"imported-{uuid.uuid4().hex[:8]}")
             
             # 添加账号
@@ -849,15 +863,17 @@ async def add_manual_token(request: Request):
     refresh_token = body.get("refresh_token", "").strip()
     name = body.get("name", "手动添加账号")
     auth_method = body.get("auth_method", "social")
+    provider = body.get("provider", "")
     client_id = body.get("client_id", "").strip()
     client_secret = body.get("client_secret", "").strip()
+    start_url = body.get("start_url", "").strip()
     
     if not access_token:
         raise HTTPException(400, "缺少 access_token")
     
-    # BuilderId 认证需要 clientId 和 clientSecret
+    # Enterprise 和 BuilderId 都需要 clientId 和 clientSecret
     if auth_method == "idc" and (not client_id or not client_secret):
-        raise HTTPException(400, "BuilderId 认证需要提供 client_id 和 client_secret")
+        raise HTTPException(400, "Enterprise/BuilderId 认证需要提供 client_id 和 client_secret")
     
     # 构建凭证数据
     credentials = {
@@ -867,10 +883,13 @@ async def add_manual_token(request: Request):
         "authMethod": auth_method,
     }
     
-    # 如果是 IdC 认证，添加 clientId 和 clientSecret
+    # 如果是 IdC 认证（Enterprise 或 BuilderId），添加额外字段
     if auth_method == "idc":
         credentials["clientId"] = client_id
         credentials["clientSecret"] = client_secret
+        credentials["provider"] = provider or "BuilderId"
+        if start_url:
+            credentials["startUrl"] = start_url
     
     # 保存凭证到文件
     file_path = await save_credentials_to_file(credentials, f"manual-{uuid.uuid4().hex[:8]}")

@@ -28,8 +28,10 @@ class KiroCredentials:
     expires_at: Optional[str] = None
     region: str = "us-east-1"
     auth_method: str = "social"
+    provider: Optional[str] = None  # "Enterprise" / "BuilderId" / "Social"
     client_id_hash: Optional[str] = None
     last_refresh: Optional[str] = None
+    start_url: Optional[str] = None
     
     @classmethod
     def from_file(cls, path: str) -> "KiroCredentials":
@@ -46,8 +48,10 @@ class KiroCredentials:
             expires_at=data.get("expiresAt") or data.get("expire"),
             region=data.get("region", "us-east-1"),
             auth_method=data.get("authMethod", "social"),
+            provider=data.get("provider"),
             client_id_hash=data.get("clientIdHash"),
             last_refresh=data.get("lastRefresh"),
+            start_url=data.get("startUrl"),
         )
     
     def to_dict(self) -> dict:
@@ -61,8 +65,10 @@ class KiroCredentials:
             "expiresAt": self.expires_at,
             "region": self.region,
             "authMethod": self.auth_method,
+            "provider": self.provider,
             "clientIdHash": self.client_id_hash,
             "lastRefresh": self.last_refresh,
+            "startUrl": self.start_url,
         }
     
     def save_to_file(self, path: str):

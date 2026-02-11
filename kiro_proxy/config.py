@@ -1,4 +1,5 @@
 """配置模块"""
+import json
 from pathlib import Path
 
 KIRO_API_URL = "https://q.us-east-1.amazonaws.com/generateAssistantResponse"
@@ -45,7 +46,61 @@ MODEL_MAPPING = {
     "opus": "claude-opus-4.5",
 }
 
-KIRO_MODELS = {"auto", "claude-sonnet-4.5", "claude-sonnet-4", "claude-haiku-4.5", "claude-opus-4.5"}
+# 内置 Kiro 模型
+BUILTIN_KIRO_MODELS = {"auto", "claude-sonnet-4.5", "claude-sonnet-4", "claude-haiku-4.5", "claude-opus-4.5", "claude-opus-4.6"}
+
+# 运行时自定义模型（从配置加载）
+_custom_models = {}  # {model_id: {"name": "...", "description": "..."}}
+
+def _load_custom_models():
+    """从配置文件加载自定义模型"""
+    global _custom_models
+    try:
+        from .core.persistence import load_config
+        config = load_config()
+        _custom_models = config.get("custom_models", {})
+    except Exception:
+        pass
+
+def get_all_kiro_models() -> set:
+    """获取所有 Kiro 模型 ID（内置 + 自定义）"""
+    return BUILTIN_KIRO_MODELS | set(_custom_models.keys())
+
+def get_custom_models() -> dict:
+    """获取自定义模型列表"""
+    return _custom_models.copy()
+
+def add_custom_model(model_id: str, name: str = "", description: str = "") -> bool:
+    """添加自定义模型"""
+    global _custom_models
+    _custom_models[model_id] = {
+        "name": name or model_id,
+        "description": description,
+    }
+    _save_custom_models()
+    return True
+
+def remove_custom_model(model_id: str) -> bool:
+    """删除自定义模型"""
+    global _custom_models
+    if model_id in _custom_models:
+        del _custom_models[model_id]
+        _save_custom_models()
+        return True
+    return False
+
+def _save_custom_models():
+    """保存自定义模型到配置文件"""
+    try:
+        from .core.persistence import load_config, save_config
+        config = load_config()
+        config["custom_models"] = _custom_models
+        save_config(config)
+    except Exception as e:
+        print(f"[Config] 保存自定义模型失败: {e}")
+
+# 兼容旧代码
+KIRO_MODELS = BUILTIN_KIRO_MODELS
 
 def map_model_name(model: str) -> str:
     """将外部模型名称映射到 Kiro 支持的名称"""
@@ -53,10 +108,14 @@ def map_model_name(model: str) -> str:
         return "claude-sonnet-4"
     if model in MODEL_MAPPING:
         return MODEL_MAPPING[model]
-    if model in KIRO_MODELS:
+    all_models = get_all_kiro_models()
+    if model in all_models:
         return model
     model_lower = model.lower()
     if "opus" in model_lower:
+        # 检查版本号
+        if "4.6" in model_lower:
+            return "claude-opus-4.6"
         return "claude-opus-4.5"
     if "haiku" in model_lower:
         return "claude-haiku-4.5"

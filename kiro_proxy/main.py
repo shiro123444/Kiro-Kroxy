@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config import MODELS_URL
+from .config import MODELS_URL, get_all_kiro_models, get_custom_models, add_custom_model, remove_custom_model, _load_custom_models, BUILTIN_KIRO_MODELS
 from .core import state, scheduler, stats_manager
 from .handlers import anthropic, openai, gemini, admin
 from .handlers import responses as responses_handler
@@ -27,6 +27,7 @@ def get_resource_path(relative_path: str) -> Path:
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
+    _load_custom_models()  # 加载自定义模型
     await scheduler.start()
     yield
     # 关闭时
@@ -101,14 +102,20 @@ async def models():
     except Exception:
         pass
     
-    # 降级返回静态列表
-    return {"object": "list", "data": [
+    # 降级返回静态列表（包含自定义模型）
+    builtin = [
         {"id": "auto", "object": "model", "owned_by": "kiro", "name": "Auto"},
         {"id": "claude-sonnet-4.5", "object": "model", "owned_by": "kiro", "name": "Claude Sonnet 4.5"},
         {"id": "claude-sonnet-4", "object": "model", "owned_by": "kiro", "name": "Claude Sonnet 4"},
         {"id": "claude-haiku-4.5", "object": "model", "owned_by": "kiro", "name": "Claude Haiku 4.5"},
         {"id": "claude-opus-4.5", "object": "model", "owned_by": "kiro", "name": "Claude Opus 4.5"},
-    ]}
+        {"id": "claude-opus-4.6", "object": "model", "owned_by": "kiro", "name": "Claude Opus 4.6"},
+    ]
+    # 追加用户自定义模型
+    custom = get_custom_models()
+    for mid, info in custom.items():
+        builtin.append({"id": mid, "object": "model", "owned_by": "kiro", "name": info.get("name", mid)})
+    return {"object": "list", "data": builtin}
 
 
 # Anthropic 协议
@@ -435,6 +442,46 @@ async def api_complete_remote_login(session_id: str, request: Request):
 async def remote_login_page(session_id: str):
     """远程登录页面"""
     return admin.get_remote_login_page(session_id)
+
+
+# ==================== 自定义模型管理 API ====================
+
+@app.get("/api/settings/models")
+async def api_get_custom_models():
+    """获取自定义模型列表"""
+    custom = get_custom_models()
+    builtin = sorted(BUILTIN_KIRO_MODELS)
+    return {
+        "builtin_models": builtin,
+        "custom_models": custom,
+    }
+
+@app.post("/api/settings/models")
+async def api_add_custom_model(request: Request):
+    """添加自定义模型"""
+    data = await request.json()
+    model_id = data.get("model_id", "").strip()
+    name = data.get("name", "").strip()
+    description = data.get("description", "").strip()
+    
+    if not model_id:
+        raise HTTPException(400, "模型 ID 不能为空")
+    
+    if model_id in BUILTIN_KIRO_MODELS:
+        raise HTTPException(400, f"'{model_id}' 是内置模型，无需添加")
+    
+    add_custom_model(model_id, name, description)
+    return {"ok": True, "model_id": model_id}
+
+@app.delete("/api/settings/models/{model_id:path}")
+async def api_remove_custom_model(model_id: str):
+    """删除自定义模型"""
+    if model_id in BUILTIN_KIRO_MODELS:
+        raise HTTPException(400, "不能删除内置模型")
+    
+    if remove_custom_model(model_id):
+        return {"ok": True}
+    raise HTTPException(404, "模型不存在")
 
 
 # ==================== 历史消息管理 API ====================

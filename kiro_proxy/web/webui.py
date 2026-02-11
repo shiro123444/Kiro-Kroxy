@@ -267,9 +267,10 @@ HTML_ACCOUNTS = '''
       <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">认证方式</label>
       <select id="manualAuthMethod" onchange="toggleAuthFields()" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)">
         <option value="social">Social Auth (Google/GitHub)</option>
-        <option value="idc">AWS BuilderId (IdC)</option>
+        <option value="idc-builderid">AWS BuilderId (IdC)</option>
+        <option value="idc-enterprise">Enterprise SSO (IdC)</option>
       </select>
-      <p style="color:var(--muted);font-size:0.75rem;margin-top:0.25rem">💡 BuilderId 需要额外提供 clientId 和 clientSecret 才能刷新 Token</p>
+      <p style="color:var(--muted);font-size:0.75rem;margin-top:0.25rem">💡 BuilderId / Enterprise 需要额外提供 clientId 和 clientSecret 才能刷新 Token</p>
     </div>
     <div style="margin-bottom:1rem">
       <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">Access Token *</label>
@@ -281,12 +282,16 @@ HTML_ACCOUNTS = '''
     </div>
     <div id="idcFields" style="display:none">
       <div style="margin-bottom:1rem">
-        <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">Client ID（BuilderId 必填）</label>
+        <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">Client ID（必填）</label>
         <input type="text" id="manualClientId" placeholder="粘贴 clientId..." style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-family:monospace;font-size:0.8rem">
       </div>
       <div style="margin-bottom:1rem">
-        <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">Client Secret（BuilderId 必填）</label>
+        <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">Client Secret（必填）</label>
         <input type="text" id="manualClientSecret" placeholder="粘贴 clientSecret..." style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-family:monospace;font-size:0.8rem">
+      </div>
+      <div style="margin-bottom:1rem">
+        <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">Start URL（Enterprise 可选）</label>
+        <input type="text" id="manualStartUrl" placeholder="https://d-xxxxxxxxxx.awsapps.com/start" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-family:monospace;font-size:0.8rem">
       </div>
     </div>
     <p style="color:var(--muted);font-size:0.75rem;margin-bottom:1rem">Token 可从 ~/.aws/sso/cache/ 目录下的 JSON 文件中获取</p>
@@ -395,6 +400,7 @@ unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_DISABLE_NONESSENTIAL_T
         <tr><td><code>claude-sonnet-4.5</code></td><td>⭐⭐⭐⭐ 更强</td><td>gemini-1.5-pro</td></tr>
         <tr><td><code>claude-haiku-4.5</code></td><td>⚡ 快速</td><td>gpt-4o-mini, gpt-3.5-turbo, haiku</td></tr>
         <tr><td><code>claude-opus-4.5</code></td><td>⭐⭐⭐⭐⭐ 最强</td><td>o1, o1-preview, opus</td></tr>
+        <tr><td><code>claude-opus-4.6</code></td><td>⭐⭐⭐⭐⭐ 最新最强</td><td>opus-4.6</td></tr>
         <tr><td><code>auto</code></td><td>🤖 自动</td><td>auto</td></tr>
       </tbody>
     </table>
@@ -547,6 +553,32 @@ HTML_SETTINGS = '''
         <br>
         推荐组合：<strong>错误重试</strong>（默认）或 <strong>智能摘要 + 错误重试</strong>
       </p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>自定义模型 <button class="secondary small" onclick="loadCustomModels()">刷新</button></h3>
+    <p style="color:var(--muted);font-size:0.875rem;margin-bottom:1rem">
+      添加新模型后，客户端请求该模型 ID 时会直接透传给 Kiro API。适用于新发布的模型如 opus-5.0、sonnet-5.0 等。
+    </p>
+    
+    <div style="display:flex;gap:0.5rem;align-items:flex-end;margin-bottom:1rem;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px">
+        <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">模型 ID *</label>
+        <input type="text" id="newModelId" placeholder="例如: claude-opus-5.0" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text);font-family:monospace">
+      </div>
+      <div style="flex:1;min-width:150px">
+        <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">显示名称</label>
+        <input type="text" id="newModelName" placeholder="例如: Claude Opus 5.0" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)">
+      </div>
+      <button onclick="addCustomModel()" style="height:38px">添加模型</button>
+    </div>
+    
+    <div id="modelList" style="margin-bottom:0.5rem"></div>
+    
+    <div style="padding:0.75rem;background:var(--bg);border-radius:6px;font-size:0.875rem;color:var(--muted)">
+      <strong>内置模型：</strong> <span id="builtinModelsList">--</span><br>
+      <span style="font-size:0.75rem">💡 内置模型无需添加，直接使用模型 ID 或映射名称即可</span>
     </div>
   </div>
 </div>
@@ -819,8 +851,8 @@ async function loadAccounts(){
       const statusBadge=a.status==='active'?'success':a.status==='cooldown'?'warn':a.status==='suspended'?'error':'error';
       const statusTextMap={active:_('accounts.available'),cooldown:_('accounts.cooldown'),unhealthy:_('accounts.unhealthy'),disabled:_('common.disabled'),suspended:_('accounts.suspended')};
       const statusText=statusTextMap[a.status]||a.status;
-      const authBadge=a.auth_method==='idc'?'info':'success';
-      const authText=a.auth_method==='idc'?'IdC':'Social';
+      const authBadge=a.provider==='Enterprise'?'warn':a.auth_method==='idc'?'info':'success';
+      const authText=a.provider==='Enterprise'?'Enterprise':a.auth_method==='idc'?'BuilderId':'Social';
       const tokenStatus=a.token_expired?_('accounts.tokenExpired'):a.token_expiring_soon?_('accounts.tokenExpiring'):_('accounts.tokenValid');
       const tokenBadge=a.token_expired?'error':a.token_expiring_soon?'warn':'success';
       return `
@@ -1056,27 +1088,33 @@ function showManualAdd(){
   $('#manualRefreshToken').value='';
   $('#manualClientId').value='';
   $('#manualClientSecret').value='';
+  $('#manualStartUrl').value='';
   $('#manualAuthMethod').value='social';
   toggleAuthFields();
 }
 
 function toggleAuthFields(){
   const authMethod=$('#manualAuthMethod').value;
-  $('#idcFields').style.display=authMethod==='idc'?'block':'none';
+  $('#idcFields').style.display=authMethod.startsWith('idc')?'block':'none';
 }
 
 async function submitManualToken(){
   const name=$('#manualName').value||'手动添加账号';
   const accessToken=$('#manualAccessToken').value.trim();
   const refreshToken=$('#manualRefreshToken').value.trim();
-  const authMethod=$('#manualAuthMethod').value;
+  const authMethodVal=$('#manualAuthMethod').value;
   const clientId=$('#manualClientId').value.trim();
   const clientSecret=$('#manualClientSecret').value.trim();
+  const startUrl=$('#manualStartUrl').value.trim();
+  
+  // 解析认证方式: social / idc-builderid / idc-enterprise
+  const authMethod=authMethodVal.startsWith('idc')?'idc':'social';
+  const provider=authMethodVal==='idc-enterprise'?'Enterprise':authMethodVal==='idc-builderid'?'BuilderId':'';
   
   if(!accessToken){alert('请输入 Access Token');return;}
   
   if(authMethod==='idc' && (!clientId || !clientSecret)){
-    alert('BuilderId 认证需要提供 Client ID 和 Client Secret');
+    alert('Enterprise/BuilderId 认证需要提供 Client ID 和 Client Secret');
     return;
   }
   
@@ -1085,12 +1123,14 @@ async function submitManualToken(){
       name,
       access_token:accessToken,
       refresh_token:refreshToken,
-      auth_method:authMethod
+      auth_method:authMethod,
+      provider:provider
     };
     
     if(authMethod==='idc'){
       payload.client_id=clientId;
       payload.client_secret=clientSecret;
+      if(startUrl) payload.start_url=startUrl;
     }
     
     const r=await fetch('/api/accounts/manual',{
@@ -1538,6 +1578,71 @@ async function updateRateLimitConfig(){
 // 页面加载时加载设置
 loadHistoryConfig();
 loadRateLimitConfig();
+loadCustomModels();
+
+// 自定义模型管理
+async function loadCustomModels(){
+  try{
+    const r=await fetch('/api/settings/models');
+    const d=await r.json();
+    // 显示内置模型列表
+    $('#builtinModelsList').textContent=(d.builtin_models||[]).join(', ');
+    // 显示自定义模型
+    const custom=d.custom_models||{};
+    const keys=Object.keys(custom);
+    if(keys.length===0){
+      $('#modelList').innerHTML='<p style="color:var(--muted);font-size:0.875rem">暂无自定义模型</p>';
+      return;
+    }
+    $('#modelList').innerHTML=keys.map(id=>{
+      const m=custom[id];
+      return `<div style="display:flex;align-items:center;justify-content:space-between;padding:0.5rem 0.75rem;background:var(--bg);border-radius:6px;margin-bottom:0.5rem">
+        <div>
+          <code style="font-weight:600;color:var(--accent)">${id}</code>
+          ${m.name&&m.name!==id?`<span style="color:var(--muted);margin-left:0.5rem">${m.name}</span>`:''}
+          ${m.description?`<span style="color:var(--muted);font-size:0.75rem;margin-left:0.5rem">(${m.description})</span>`:''}
+        </div>
+        <button class="secondary small" onclick="removeCustomModel('${id}')" style="color:var(--error)">\u2716</button>
+      </div>`;
+    }).join('');
+  }catch(e){console.error('Load custom models failed:',e)}
+}
+
+async function addCustomModel(){
+  const modelId=$('#newModelId').value.trim();
+  const name=$('#newModelName').value.trim();
+  if(!modelId){alert('请输入模型 ID');return;}
+  try{
+    const r=await fetch('/api/settings/models',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({model_id:modelId,name:name||modelId})
+    });
+    const d=await r.json();
+    if(d.ok){
+      $('#newModelId').value='';
+      $('#newModelName').value='';
+      loadCustomModels();
+      showToast('模型已添加: '+modelId);
+    }else{
+      alert(d.detail||'添加失败');
+    }
+  }catch(e){alert('添加失败: '+e.message)}
+}
+
+async function removeCustomModel(modelId){
+  if(!confirm('确定删除模型 '+modelId+' ?'))return;
+  try{
+    const r=await fetch('/api/settings/models/'+encodeURIComponent(modelId),{method:'DELETE'});
+    const d=await r.json();
+    if(d.ok){
+      loadCustomModels();
+      showToast('模型已删除');
+    }else{
+      alert(d.detail||'删除失败');
+    }
+  }catch(e){alert('删除失败: '+e.message)}
+}
 '''
 
 JS_SCRIPTS = JS_UTILS + JS_TABS + JS_STATUS + JS_DOCS + JS_STATS + JS_LOGS + JS_ACCOUNTS + JS_LOGIN + JS_FLOWS + JS_SETTINGS

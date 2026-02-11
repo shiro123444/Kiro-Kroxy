@@ -42,6 +42,10 @@ def cmd_accounts_export(args):
                     "expiresAt": creds.expires_at,
                     "region": creds.region,
                     "authMethod": creds.auth_method,
+                    "provider": creds.provider,
+                    "clientId": creds.client_id,
+                    "clientSecret": creds.client_secret,
+                    "startUrl": creds.start_url,
                 }
             })
     
@@ -54,6 +58,67 @@ def cmd_accounts_export(args):
         print(json.dumps(output, indent=2, ensure_ascii=False))
 
 
+def _normalize_import_data(data) -> list:
+    """
+    将多种 JSON 格式统一转换为标准账号列表。
+    
+    支持格式:
+    1. 标准格式: {"accounts": [{name, credentials: {...}}]}
+    2. 扁平单账号: {accessToken, refreshToken, provider, ...}
+    3. 扁平数组: [{accessToken, ...}, ...]
+    """
+    # 格式 1: 标准导入格式
+    if isinstance(data, dict) and "accounts" in data:
+        result = []
+        for acc in data["accounts"]:
+            if "credentials" in acc:
+                result.append(acc)
+            elif acc.get("accessToken"):
+                # accounts 数组里包含的是扁平格式
+                result.append(_flat_to_standard(acc))
+        return result
+    
+    # 格式 3: 扁平数组
+    if isinstance(data, list):
+        return [_flat_to_standard(item) for item in data if isinstance(item, dict) and item.get("accessToken")]
+    
+    # 格式 2: 单个扁平对象
+    if isinstance(data, dict) and data.get("accessToken"):
+        return [_flat_to_standard(data)]
+    
+    return []
+
+
+def _flat_to_standard(flat: dict) -> dict:
+    """将扁平格式账号转换为标准 {name, credentials} 格式"""
+    # 从扁平格式中提取名称
+    name = flat.get("label") or flat.get("name") or flat.get("email") or "导入账号"
+    
+    # 检测 provider
+    provider = flat.get("provider", "").strip()
+    auth_method = flat.get("authMethod", "social")
+    if provider.lower() == "enterprise":
+        auth_method = "idc"
+    elif auth_method.lower() == "idc" and not provider:
+        provider = "BuilderId"
+    
+    return {
+        "name": name,
+        "enabled": flat.get("status", "active") == "active" if flat.get("status") else flat.get("enabled", True),
+        "credentials": {
+            "accessToken": flat.get("accessToken"),
+            "refreshToken": flat.get("refreshToken"),
+            "expiresAt": flat.get("expiresAt"),
+            "region": flat.get("region", "us-east-1"),
+            "authMethod": auth_method,
+            "provider": provider or None,
+            "clientId": flat.get("clientId"),
+            "clientSecret": flat.get("clientSecret"),
+            "startUrl": flat.get("startUrl"),
+        }
+    }
+
+
 def cmd_accounts_import(args):
     """导入账号配置"""
     import uuid
@@ -61,7 +126,12 @@ def cmd_accounts_import(args):
     from .auth import save_credentials_to_file
     
     data = json.loads(Path(args.file).read_text())
-    accounts_data = data.get("accounts", [])
+    
+    # 支持多种 JSON 格式：
+    # 1. 标准格式: {"accounts": [{name, credentials: {...}}], "version": "1.0"}
+    # 2. 扁平单账号: {accessToken, refreshToken, ...}
+    # 3. 扁平数组: [{accessToken, refreshToken, ...}, ...]
+    accounts_data = _normalize_import_data(data)
     imported = 0
     
     for acc_data in accounts_data:
@@ -70,14 +140,32 @@ def cmd_accounts_import(args):
             print(f"跳过 {acc_data.get('name', '未知')}: 缺少 accessToken")
             continue
         
+        # 检测 provider，Enterprise/IdC 自动设置 authMethod 为 idc
+        auth_method = creds.get("authMethod", "social").lower()
+        provider = creds.get("provider")
+        if provider and provider.lower() == "enterprise":
+            auth_method = "idc"
+        elif auth_method == "idc" and not provider:
+            provider = "BuilderId"
+        
         # 保存凭证到文件
-        file_path = asyncio.run(save_credentials_to_file({
+        cred_data = {
             "accessToken": creds.get("accessToken"),
             "refreshToken": creds.get("refreshToken"),
             "expiresAt": creds.get("expiresAt"),
             "region": creds.get("region", "us-east-1"),
-            "authMethod": creds.get("authMethod", "social"),
-        }, f"imported-{uuid.uuid4().hex[:8]}"))
+            "authMethod": auth_method,
+            "provider": provider,
+        }
+        # IdC/Enterprise 认证需要 clientId 和 clientSecret
+        if creds.get("clientId"):
+            cred_data["clientId"] = creds["clientId"]
+        if creds.get("clientSecret"):
+            cred_data["clientSecret"] = creds["clientSecret"]
+        if creds.get("startUrl"):
+            cred_data["startUrl"] = creds["startUrl"]
+        file_path = asyncio.run(save_credentials_to_file(
+            cred_data, f"imported-{uuid.uuid4().hex[:8]}"))
         
         account = Account(
             id=uuid.uuid4().hex[:8],

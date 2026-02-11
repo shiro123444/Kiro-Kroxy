@@ -39,6 +39,14 @@
 - **Web UI** - 简洁的管理界面，支持监控、日志、设置
 - **多语言界面** - 支持中文和英文界面切换
 
+### v1.7.3 新功能
+- **Enterprise 账号支持** - 完整支持 Enterprise SSO (IdC) 账号导入与管理
+- **多格式导入** - 支持标准格式、扁平单账号、扁平数组三种 JSON 导入格式
+- **Enterprise/BuilderId 区分** - WebUI 中清晰区分 Enterprise（黄色）/ BuilderId（蓝色）/ Social（绿色）
+- **Claude Opus 4.6** - 新增 `claude-opus-4.6` 模型支持
+- **自定义模型管理** - WebUI 设置页新增自定义模型管理，可快速添加/删除新模型（如 opus-5.0、sonnet-5.0）
+- **CLI 导入修复** - 修复 CLI 导入时丢失 clientId/clientSecret/startUrl 的问题
+
 ### v1.7.2 新功能
 - **多语言支持** - WebUI 完整支持中英文切换
 - **双语启动器** - 端口/语言设置，清晰的启动按钮
