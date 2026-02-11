@@ -87,17 +87,27 @@ async def models():
             resp = await client.get(MODELS_URL, headers=headers, params={"origin": "AI_EDITOR"})
             if resp.status_code == 200:
                 data = resp.json()
+                model_list = [
+                    {
+                        "id": m["modelId"],
+                        "object": "model",
+                        "owned_by": "kiro",
+                        "name": m["modelName"],
+                    }
+                    for m in data.get("models", [])
+                ]
+                # 将内置新模型和自定义模型追加到上游列表中
+                existing_ids = {m["id"] for m in model_list}
+                for extra_id in sorted(BUILTIN_KIRO_MODELS):
+                    if extra_id not in existing_ids and extra_id != "auto":
+                        model_list.append({"id": extra_id, "object": "model", "owned_by": "kiro", "name": extra_id})
+                custom = get_custom_models()
+                for mid, info in custom.items():
+                    if mid not in existing_ids:
+                        model_list.append({"id": mid, "object": "model", "owned_by": "kiro", "name": info.get("name", mid)})
                 return {
                     "object": "list",
-                    "data": [
-                        {
-                            "id": m["modelId"],
-                            "object": "model",
-                            "owned_by": "kiro",
-                            "name": m["modelName"],
-                        }
-                        for m in data.get("models", [])
-                    ]
+                    "data": model_list
                 }
     except Exception:
         pass
