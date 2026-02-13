@@ -91,20 +91,20 @@ class HistoryConfig:
     strategies: List[TruncateStrategy] = field(default_factory=lambda: [TruncateStrategy.ERROR_RETRY])
     
     # 自动截断配置
-    max_messages: int = 30           # 最大消息数
-    max_chars: int = 150000          # 最大字符数（约 50k tokens）
+    max_messages: int = 50           # 最大消息数
+    max_chars: int = 600000          # 最大字符数（约 200k tokens）
     
     # 智能摘要配置
     summary_keep_recent: int = 10    # 摘要时保留最近 N 条完整消息
-    summary_threshold: int = 100000  # 触发摘要的字符数阈值
+    summary_threshold: int = 400000  # 触发摘要的字符数阈值
     summary_max_length: int = 2000   # 摘要最大长度
     
     # 错误重试配置
-    retry_max_messages: int = 20     # 重试时保留的消息数
+    retry_max_messages: int = 30     # 重试时保留的消息数
     max_retries: int = 2             # 最大重试次数
     
     # 预估配置
-    estimate_threshold: int = 180000  # 预估阈值（字符数）
+    estimate_threshold: int = 650000  # 预估阈值（字符数）
     chars_per_token: float = 3.0      # 每 token 约等于多少字符
 
     # 摘要缓存（保守策略）
@@ -140,14 +140,14 @@ class HistoryConfig:
         strategies = [TruncateStrategy(s) for s in data.get("strategies", ["error_retry"])]
         return cls(
             strategies=strategies,
-            max_messages=data.get("max_messages", 30),
-            max_chars=data.get("max_chars", 150000),
+            max_messages=data.get("max_messages", 50),
+            max_chars=data.get("max_chars", 600000),
             summary_keep_recent=data.get("summary_keep_recent", 10),
-            summary_threshold=data.get("summary_threshold", 100000),
+            summary_threshold=data.get("summary_threshold", 400000),
             summary_max_length=data.get("summary_max_length", 2000),
-            retry_max_messages=data.get("retry_max_messages", 15),
+            retry_max_messages=data.get("retry_max_messages", 30),
             max_retries=data.get("max_retries", 2),
-            estimate_threshold=data.get("estimate_threshold", 180000),
+            estimate_threshold=data.get("estimate_threshold", 650000),
             chars_per_token=data.get("chars_per_token", 3.0),
             summary_cache_enabled=data.get("summary_cache_enabled", True),
             summary_cache_min_delta_messages=data.get("summary_cache_min_delta_messages", 3),

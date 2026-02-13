@@ -493,7 +493,7 @@ HTML_SETTINGS = '''
       </div>
       <div>
         <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">最大字符数</label>
-        <input type="number" id="maxChars" value="150000" min="10000" max="500000" step="10000" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)" onchange="updateHistoryConfig()">
+        <input type="number" id="maxChars" value="600000" min="10000" max="1000000" step="10000" style="width:100%;padding:0.5rem;border:1px solid var(--border);border-radius:6px;background:var(--card);color:var(--text)" onchange="updateHistoryConfig()">
       </div>
       <div>
         <label style="display:block;font-size:0.875rem;color:var(--muted);margin-bottom:0.25rem">重试时保留消息数</label>
@@ -1495,12 +1495,12 @@ async function loadHistoryConfig(){
     $('#strategySmartSummary').checked=strategies.includes('smart_summary');
     $('#strategyErrorRetry').checked=strategies.includes('error_retry');
     $('#strategyPreEstimate').checked=strategies.includes('pre_estimate');
-    $('#maxMessages').value=d.max_messages||30;
-    $('#maxChars').value=d.max_chars||150000;
-    $('#retryMaxMessages').value=d.retry_max_messages||20;
+    $('#maxMessages').value=d.max_messages||50;
+    $('#maxChars').value=d.max_chars||600000;
+    $('#retryMaxMessages').value=d.retry_max_messages||30;
     $('#maxRetries').value=d.max_retries||2;
     $('#summaryKeepRecent').value=d.summary_keep_recent||10;
-    $('#summaryThreshold').value=d.summary_threshold||100000;
+    $('#summaryThreshold').value=d.summary_threshold||400000;
     $('#summaryCacheEnabled').checked=d.summary_cache_enabled!==false;
     $('#summaryCacheDeltaMessages').value=d.summary_cache_min_delta_messages||3;
     $('#summaryCacheDeltaChars').value=d.summary_cache_min_delta_chars||4000;
@@ -1522,12 +1522,12 @@ async function updateHistoryConfig(){
   $('#summaryOptions').style.display=$('#strategySmartSummary').checked?'block':'none';
   const config={
     strategies,
-    max_messages:parseInt($('#maxMessages').value)||30,
-    max_chars:parseInt($('#maxChars').value)||150000,
-    retry_max_messages:parseInt($('#retryMaxMessages').value)||15,
+    max_messages:parseInt($('#maxMessages').value)||50,
+    max_chars:parseInt($('#maxChars').value)||600000,
+    retry_max_messages:parseInt($('#retryMaxMessages').value)||30,
     max_retries:parseInt($('#maxRetries').value)||2,
     summary_keep_recent:parseInt($('#summaryKeepRecent').value)||10,
-    summary_threshold:parseInt($('#summaryThreshold').value)||100000,
+    summary_threshold:parseInt($('#summaryThreshold').value)||400000,
     summary_cache_enabled:$('#summaryCacheEnabled').checked,
     summary_cache_min_delta_messages:parseInt($('#summaryCacheDeltaMessages').value)||3,
     summary_cache_min_delta_chars:parseInt($('#summaryCacheDeltaChars').value)||4000,

@@ -13,6 +13,18 @@ from .config import MODELS_URL, get_all_kiro_models, get_custom_models, add_cust
 from .core import state, scheduler, stats_manager
 from .handlers import anthropic, openai, gemini, admin
 from .handlers import responses as responses_handler
+
+# 模型上下文窗口和输出限制配置
+MODEL_CONTEXT_WINDOWS = {
+    # model_id: (context_window_tokens, max_output_tokens)
+    "auto":                200000, 
+    "claude-sonnet-4.5":   200000,
+    "claude-sonnet-4":     200000,
+    "claude-haiku-4.5":    200000,
+    "claude-opus-4.5":     200000,
+    "claude-opus-4.6":     200000,
+}
+MODEL_MAX_OUTPUT_TOKENS = 32000  # Kiro 统一输出限制
 from .web import get_html_page
 from .credential import generate_machine_id, get_kiro_version
 
@@ -93,6 +105,8 @@ async def models():
                         "object": "model",
                         "owned_by": "kiro",
                         "name": m["modelName"],
+                        "context_window": MODEL_CONTEXT_WINDOWS.get(m["modelId"], 200000),
+                        "max_tokens": MODEL_MAX_OUTPUT_TOKENS,
                     }
                     for m in data.get("models", [])
                 ]
@@ -100,11 +114,19 @@ async def models():
                 existing_ids = {m["id"] for m in model_list}
                 for extra_id in sorted(BUILTIN_KIRO_MODELS):
                     if extra_id not in existing_ids and extra_id != "auto":
-                        model_list.append({"id": extra_id, "object": "model", "owned_by": "kiro", "name": extra_id})
+                        model_list.append({
+                            "id": extra_id, "object": "model", "owned_by": "kiro", "name": extra_id,
+                            "context_window": MODEL_CONTEXT_WINDOWS.get(extra_id, 200000),
+                            "max_tokens": MODEL_MAX_OUTPUT_TOKENS,
+                        })
                 custom = get_custom_models()
                 for mid, info in custom.items():
                     if mid not in existing_ids:
-                        model_list.append({"id": mid, "object": "model", "owned_by": "kiro", "name": info.get("name", mid)})
+                        model_list.append({
+                            "id": mid, "object": "model", "owned_by": "kiro", "name": info.get("name", mid),
+                            "context_window": MODEL_CONTEXT_WINDOWS.get(mid, 200000),
+                            "max_tokens": MODEL_MAX_OUTPUT_TOKENS,
+                        })
                 return {
                     "object": "list",
                     "data": model_list
@@ -114,17 +136,27 @@ async def models():
     
     # 降级返回静态列表（包含自定义模型）
     builtin = [
-        {"id": "auto", "object": "model", "owned_by": "kiro", "name": "Auto"},
-        {"id": "claude-sonnet-4.5", "object": "model", "owned_by": "kiro", "name": "Claude Sonnet 4.5"},
-        {"id": "claude-sonnet-4", "object": "model", "owned_by": "kiro", "name": "Claude Sonnet 4"},
-        {"id": "claude-haiku-4.5", "object": "model", "owned_by": "kiro", "name": "Claude Haiku 4.5"},
-        {"id": "claude-opus-4.5", "object": "model", "owned_by": "kiro", "name": "Claude Opus 4.5"},
-        {"id": "claude-opus-4.6", "object": "model", "owned_by": "kiro", "name": "Claude Opus 4.6"},
+        {"id": "auto", "object": "model", "owned_by": "kiro", "name": "Auto",
+         "context_window": 200000, "max_tokens": MODEL_MAX_OUTPUT_TOKENS},
+        {"id": "claude-sonnet-4.5", "object": "model", "owned_by": "kiro", "name": "Claude Sonnet 4.5",
+         "context_window": 200000, "max_tokens": MODEL_MAX_OUTPUT_TOKENS},
+        {"id": "claude-sonnet-4", "object": "model", "owned_by": "kiro", "name": "Claude Sonnet 4",
+         "context_window": 200000, "max_tokens": MODEL_MAX_OUTPUT_TOKENS},
+        {"id": "claude-haiku-4.5", "object": "model", "owned_by": "kiro", "name": "Claude Haiku 4.5",
+         "context_window": 200000, "max_tokens": MODEL_MAX_OUTPUT_TOKENS},
+        {"id": "claude-opus-4.5", "object": "model", "owned_by": "kiro", "name": "Claude Opus 4.5",
+         "context_window": 200000, "max_tokens": MODEL_MAX_OUTPUT_TOKENS},
+        {"id": "claude-opus-4.6", "object": "model", "owned_by": "kiro", "name": "Claude Opus 4.6",
+         "context_window": 200000, "max_tokens": MODEL_MAX_OUTPUT_TOKENS},
     ]
     # 追加用户自定义模型
     custom = get_custom_models()
     for mid, info in custom.items():
-        builtin.append({"id": mid, "object": "model", "owned_by": "kiro", "name": info.get("name", mid)})
+        builtin.append({
+            "id": mid, "object": "model", "owned_by": "kiro", "name": info.get("name", mid),
+            "context_window": MODEL_CONTEXT_WINDOWS.get(mid, 200000),
+            "max_tokens": MODEL_MAX_OUTPUT_TOKENS,
+        })
     return {"object": "list", "data": builtin}
 
 

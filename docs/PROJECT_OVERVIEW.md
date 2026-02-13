@@ -122,7 +122,7 @@ Kiro API
     "enabled": true,
     "strategy": "auto_truncate",
     "max_messages": 50,
-    "max_chars": 100000,
+    "max_chars": 600000,
     "summary_enabled": true,
     "summary_cache_enabled": true
   },
