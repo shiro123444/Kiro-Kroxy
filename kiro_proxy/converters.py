@@ -13,6 +13,7 @@ import json
 import hashlib
 import re
 import base64
+import uuid
 from typing import List, Dict, Any, Tuple, Optional
 from .core.http_pool import http_pool
 
@@ -731,8 +732,11 @@ def convert_kiro_response_to_openai(result: dict, model: str, msg_id: str) -> di
     
     for tool_use in result.get("tool_uses", []):
         if tool_use.get("type") == "tool_use":
+            tool_call_id = tool_use.get("id", "")
+            if not tool_call_id:
+                tool_call_id = f"call_{uuid.uuid4().hex[:24]}"
             tool_calls.append({
-                "id": tool_use.get("id", ""),
+                "id": tool_call_id,
                 "type": "function",
                 "function": {
                     "name": tool_use.get("name", ""),
@@ -753,6 +757,10 @@ def convert_kiro_response_to_openai(result: dict, model: str, msg_id: str) -> di
     if tool_calls:
         message["tool_calls"] = tool_calls
     
+    # 从结果中提取真实 token 用量
+    input_tokens = result.get("input_tokens", 0)
+    output_tokens = result.get("output_tokens", 0)
+    
     return {
         "id": msg_id,
         "object": "chat.completion",
@@ -763,9 +771,9 @@ def convert_kiro_response_to_openai(result: dict, model: str, msg_id: str) -> di
             "finish_reason": finish_reason
         }],
         "usage": {
-            "prompt_tokens": 100,
-            "completion_tokens": 100,
-            "total_tokens": 200
+            "prompt_tokens": input_tokens,
+            "completion_tokens": output_tokens,
+            "total_tokens": input_tokens + output_tokens
         }
     }
 

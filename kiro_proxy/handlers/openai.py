@@ -10,13 +10,19 @@ from fastapi import Request, HTTPException
 from fastapi.responses import StreamingResponse
 
 from ..config import KIRO_API_URL, map_model_name
-from ..core import state, is_retryable_error, stats_manager
+from ..core import state, is_retryable_error, stats_manager, flow_monitor, TokenUsage
 from ..core.state import RequestLog
 from ..core.history_manager import HistoryManager, get_history_config, is_content_length_error
 from ..core.error_handler import classify_error, ErrorType, format_error_log
 from ..core.rate_limiter import get_rate_limiter
-from ..kiro_api import build_headers, build_kiro_request, parse_event_stream, is_quota_exceeded_error
-from ..converters import generate_session_id, convert_openai_messages_to_kiro, extract_images_from_content
+from ..kiro_api import build_headers, build_kiro_request, parse_event_stream, parse_event_stream_full, is_quota_exceeded_error
+from ..converters import (
+    generate_session_id,
+    convert_openai_messages_to_kiro,
+    convert_kiro_response_to_openai,
+    extract_images_from_content,
+    fix_history_alternation,
+)
 
 
 async def handle_chat_completions(request: Request):
@@ -39,6 +45,17 @@ async def handle_chat_completions(request: Request):
     
     if not account:
         raise HTTPException(503, "All accounts are rate limited or unavailable")
+    
+    # 创建 Flow 记录
+    flow_id = flow_monitor.create_flow(
+        protocol="openai",
+        method="POST",
+        path="/v1/chat/completions",
+        headers=dict(request.headers),
+        body=body,
+        account_id=account.id,
+        account_name=account.name,
+    )
     
     # 检查 token 是否即将过期，尝试刷新
     if account.is_token_expiring_soon(5):
@@ -92,7 +109,6 @@ async def handle_chat_completions(request: Request):
         history = history_manager.pre_process(history, user_content)
     
     # 摘要/截断后再次修复历史交替和 toolUses/toolResults 配对
-    from ..converters import fix_history_alternation
     history = fix_history_alternation(history)
     
     if history_manager.was_truncated:
@@ -115,7 +131,7 @@ async def handle_chat_completions(request: Request):
     
     error_msg = None
     status_code = 200
-    content = ""
+    result = None  # parse_event_stream_full 返回的完整结构
     current_account = account
     max_retries = 2
     
@@ -143,6 +159,8 @@ async def handle_chat_completions(request: Request):
                     )
                     continue
                 
+                if flow_id:
+                    flow_monitor.fail_flow(flow_id, "rate_limit_error", "All accounts rate limited", 429)
                 raise HTTPException(429, "All accounts rate limited")
             
             # 处理可重试的服务端错误
@@ -151,6 +169,8 @@ async def handle_chat_completions(request: Request):
                     print(f"[OpenAI] 服务端错误 {resp.status_code}，重试 {retry + 1}/{max_retries}")
                     await asyncio.sleep(0.5 * (2 ** retry))
                     continue
+                if flow_id:
+                    flow_monitor.fail_flow(flow_id, "api_error", "Server error after retries", resp.status_code)
                 raise HTTPException(resp.status_code, f"Server error after {max_retries} retries")
             
             if resp.status_code != 200:
@@ -203,9 +223,12 @@ async def handle_chat_completions(request: Request):
                     else:
                         print(f"[OpenAI] 内容长度超限但未重试: retry={retry}/{max_retries}")
                 
+                if flow_id:
+                    flow_monitor.fail_flow(flow_id, error.type.value if hasattr(error.type, 'value') else str(error.type), error.user_message, resp.status_code, error_msg[:500])
                 raise HTTPException(resp.status_code, error.user_message)
             
-            content = parse_event_stream(resp.content)
+            # 成功：解析完整响应（包含 tool_uses）
+            result = parse_event_stream_full(resp.content)
             current_account.request_count += 1
             current_account.last_used = time.time()
             get_rate_limiter().record_request(current_account.id)
@@ -220,6 +243,8 @@ async def handle_chat_completions(request: Request):
                 print(f"[OpenAI] 请求超时，重试 {retry + 1}/{max_retries}")
                 await asyncio.sleep(0.5 * (2 ** retry))
                 continue
+            if flow_id:
+                flow_monitor.fail_flow(flow_id, "timeout", "Request timeout after retries", 408)
             raise HTTPException(408, "Request timeout after retries")
         except httpx.ConnectError:
             error_msg = "Connection error"
@@ -228,6 +253,8 @@ async def handle_chat_completions(request: Request):
                 print(f"[OpenAI] 连接错误，重试 {retry + 1}/{max_retries}")
                 await asyncio.sleep(0.5 * (2 ** retry))
                 continue
+            if flow_id:
+                flow_monitor.fail_flow(flow_id, "connect_error", "Connection error after retries", 502)
             raise HTTPException(502, "Connection error after retries")
         except Exception as e:
             error_msg = str(e)
@@ -237,6 +264,8 @@ async def handle_chat_completions(request: Request):
                 print(f"[OpenAI] 网络错误，重试 {retry + 1}/{max_retries}: {type(e).__name__}")
                 await asyncio.sleep(0.5 * (2 ** retry))
                 continue
+            if flow_id:
+                flow_monitor.fail_flow(flow_id, "internal_error", str(e), 500)
             raise HTTPException(500, str(e))
     
     # 记录日志
@@ -261,40 +290,163 @@ async def handle_chat_completions(request: Request):
         latency_ms=duration
     )
     
+    msg_id = f"chatcmpl-{log_id}"
+    
     if stream:
-        async def generate():
-            for chunk in [content[i:i+20] for i in range(0, len(content), 20)]:
+        return _stream_openai_response(result, model, msg_id, flow_id, full_content="".join(result.get("content", [])))
+    
+    # 非流式：直接用 convert_kiro_response_to_openai
+    response = convert_kiro_response_to_openai(result, model, msg_id)
+    
+    # 完成 Flow
+    if flow_id:
+        full_content = "".join(result.get("content", []))
+        flow_monitor.complete_flow(
+            flow_id,
+            status_code=200,
+            content=full_content,
+            tool_calls=result.get("tool_uses", []),
+            stop_reason=result.get("stop_reason", "stop"),
+            usage=TokenUsage(
+                input_tokens=result.get("input_tokens", 0),
+                output_tokens=result.get("output_tokens", 0),
+            ),
+        )
+    
+    return response
+
+
+def _stream_openai_response(result: dict, model: str, msg_id: str, flow_id: str = None, full_content: str = ""):
+    """将 Kiro 完整响应转为 OpenAI SSE 流式格式
+    
+    按照 OpenAI streaming 规范:
+    - 文本内容通过 delta.content 逐块发送
+    - 工具调用通过 delta.tool_calls 发送（先发 name+id，再发 arguments）
+    - finish_reason 在最后一个 chunk 中设置
+    """
+    tool_uses = result.get("tool_uses", [])
+    stop_reason = result.get("stop_reason", "stop")
+    
+    # 映射 finish_reason
+    if tool_uses:
+        finish_reason = "tool_calls"
+    elif stop_reason == "max_tokens":
+        finish_reason = "length"
+    else:
+        finish_reason = "stop"
+    
+    async def generate():
+        created = int(time.time())
+        
+        # 流式发送文本内容
+        text = "".join(result.get("content", []))
+        if text:
+            # 逐块发送文本，每块 80 字符（比原来 20 大，减少 chunk 数量）
+            chunk_size = 80
+            for i in range(0, len(text), chunk_size):
+                chunk_text = text[i:i + chunk_size]
                 data = {
-                    "id": f"chatcmpl-{log_id}",
+                    "id": msg_id,
                     "object": "chat.completion.chunk",
-                    "created": int(time.time()),
+                    "created": created,
                     "model": model,
-                    "choices": [{"index": 0, "delta": {"content": chunk}, "finish_reason": None}]
+                    "choices": [{
+                        "index": 0,
+                        "delta": {"content": chunk_text},
+                        "finish_reason": None
+                    }]
                 }
                 yield f"data: {json.dumps(data)}\n\n"
-                await asyncio.sleep(0.02)
-            
-            end_data = {
-                "id": f"chatcmpl-{log_id}",
-                "object": "chat.completion.chunk",
-                "created": int(time.time()),
-                "model": model,
-                "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}]
-            }
-            yield f"data: {json.dumps(end_data)}\n\n"
-            yield "data: [DONE]\n\n"
+                await asyncio.sleep(0.01)
         
-        return StreamingResponse(generate(), media_type="text/event-stream")
+        # 流式发送工具调用（OpenAI streaming tool call 格式）
+        for idx, tool_use in enumerate(tool_uses):
+            tool_call_id = tool_use.get("id", "")
+            if not tool_call_id:
+                tool_call_id = f"call_{uuid.uuid4().hex[:24]}"
+            
+            func_name = tool_use.get("name", "")
+            func_args = json.dumps(tool_use.get("input", {}))
+            
+            # 第一个 chunk: 发送 tool_call 的 id, type, name (arguments 为空)
+            data = {
+                "id": msg_id,
+                "object": "chat.completion.chunk",
+                "created": created,
+                "model": model,
+                "choices": [{
+                    "index": 0,
+                    "delta": {
+                        "tool_calls": [{
+                            "index": idx,
+                            "id": tool_call_id,
+                            "type": "function",
+                            "function": {
+                                "name": func_name,
+                                "arguments": ""
+                            }
+                        }]
+                    },
+                    "finish_reason": None
+                }]
+            }
+            yield f"data: {json.dumps(data)}\n\n"
+            await asyncio.sleep(0.01)
+            
+            # 后续 chunks: 分块发送 arguments
+            arg_chunk_size = 200
+            for j in range(0, max(len(func_args), 1), arg_chunk_size):
+                arg_chunk = func_args[j:j + arg_chunk_size]
+                if not arg_chunk:
+                    break
+                data = {
+                    "id": msg_id,
+                    "object": "chat.completion.chunk",
+                    "created": created,
+                    "model": model,
+                    "choices": [{
+                        "index": 0,
+                        "delta": {
+                            "tool_calls": [{
+                                "index": idx,
+                                "function": {
+                                    "arguments": arg_chunk
+                                }
+                            }]
+                        },
+                        "finish_reason": None
+                    }]
+                }
+                yield f"data: {json.dumps(data)}\n\n"
+                await asyncio.sleep(0.01)
+        
+        # 最终 chunk: finish_reason
+        end_data = {
+            "id": msg_id,
+            "object": "chat.completion.chunk",
+            "created": created,
+            "model": model,
+            "choices": [{
+                "index": 0,
+                "delta": {},
+                "finish_reason": finish_reason
+            }]
+        }
+        yield f"data: {json.dumps(end_data)}\n\n"
+        yield "data: [DONE]\n\n"
+        
+        # 完成 Flow
+        if flow_id:
+            flow_monitor.complete_flow(
+                flow_id,
+                status_code=200,
+                content=full_content,
+                tool_calls=tool_uses,
+                stop_reason=stop_reason,
+                usage=TokenUsage(
+                    input_tokens=result.get("input_tokens", 0),
+                    output_tokens=result.get("output_tokens", 0),
+                ),
+            )
     
-    return {
-        "id": f"chatcmpl-{log_id}",
-        "object": "chat.completion",
-        "created": int(datetime.now().timestamp()),
-        "model": model,
-        "choices": [{
-            "index": 0,
-            "message": {"role": "assistant", "content": content},
-            "finish_reason": "stop"
-        }],
-        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
-    }
+    return StreamingResponse(generate(), media_type="text/event-stream")

@@ -1,5 +1,6 @@
 """配置模块"""
 import json
+import re
 from pathlib import Path
 
 KIRO_API_URL = "https://q.us-east-1.amazonaws.com/generateAssistantResponse"
@@ -40,6 +41,11 @@ MODEL_MAPPING = {
     "gemini-2.0-flash-thinking": "claude-opus-4.5",
     "gemini-1.5-pro": "claude-sonnet-4.5",
     "gemini-1.5-flash": "claude-sonnet-4",
+    # 连字符版本号别名（兼容 VS Code Copilot / Cherry Studio 等客户端）
+    "claude-sonnet-4-5": "claude-sonnet-4.5",
+    "claude-haiku-4-5": "claude-haiku-4.5",
+    "claude-opus-4-5": "claude-opus-4.5",
+    "claude-opus-4-6": "claude-opus-4.6",
     # 别名
     "sonnet": "claude-sonnet-4",
     "haiku": "claude-haiku-4.5",
@@ -102,23 +108,69 @@ def _save_custom_models():
 # 兼容旧代码
 KIRO_MODELS = BUILTIN_KIRO_MODELS
 
+# 预编译正则：匹配 claude-{family}-{major}-{minor} 连字符版本号格式
+_CLAUDE_DASH_VERSION_RE = re.compile(
+    r'^(claude-(?:sonnet|haiku|opus)-(\d+))-(\d+)'
+)
+
+def _normalize_model_id(model: str) -> str:
+    """将连字符版本号归一化为点号格式
+    
+    例如:
+        claude-sonnet-4-5          → claude-sonnet-4.5
+        claude-opus-4-6            → claude-opus-4.6
+        claude-sonnet-4-5-20250929 → claude-sonnet-4.5-20250929
+        claude-sonnet-4.5          → claude-sonnet-4.5（不变）
+    """
+    m = _CLAUDE_DASH_VERSION_RE.match(model)
+    if m:
+        prefix = m.group(1)       # claude-sonnet-4
+        minor = m.group(3)        # 5
+        rest = model[m.end():]    # -20250929 或空
+        return f"{prefix}.{minor}{rest}"
+    return model
+
+
 def map_model_name(model: str) -> str:
-    """将外部模型名称映射到 Kiro 支持的名称"""
+    """将外部模型名称映射到 Kiro 支持的名称
+    
+    支持多种格式：
+    - 点号版本: claude-sonnet-4.5
+    - 连字符版本: claude-sonnet-4-5（自动转换为点号）
+    - 带日期后缀: claude-sonnet-4-5-20250929
+    - GPT/Gemini 别名: gpt-4o → claude-sonnet-4
+    - 简短别名: sonnet, haiku, opus
+    """
     if not model:
         return "claude-sonnet-4"
+    
+    # 精确匹配静态映射表（包含连字符别名）
     if model in MODEL_MAPPING:
         return MODEL_MAPPING[model]
+    
+    # 精确匹配内置/自定义模型
     all_models = get_all_kiro_models()
     if model in all_models:
         return model
+    
+    # 连字符→点号归一化后再匹配
+    normalized = _normalize_model_id(model)
+    if normalized != model:
+        if normalized in MODEL_MAPPING:
+            return MODEL_MAPPING[normalized]
+        if normalized in all_models:
+            return normalized
+    
+    # 模糊匹配（兜底）
     model_lower = model.lower()
     if "opus" in model_lower:
-        # 检查版本号
-        if "4.6" in model_lower:
+        if "4.6" in model_lower or "4-6" in model_lower:
             return "claude-opus-4.6"
         return "claude-opus-4.5"
     if "haiku" in model_lower:
         return "claude-haiku-4.5"
     if "sonnet" in model_lower:
-        return "claude-sonnet-4.5" if "4.5" in model_lower else "claude-sonnet-4"
+        if "4.5" in model_lower or "4-5" in model_lower:
+            return "claude-sonnet-4.5"
+        return "claude-sonnet-4"
     return "claude-sonnet-4"
