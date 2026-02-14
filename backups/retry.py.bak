@@ -1,13 +1,11 @@
 """请求重试机制"""
 import asyncio
-import random
 from typing import Callable, Any, Optional, Set
 from functools import wraps
 
 # 可重试的状态码
 RETRYABLE_STATUS_CODES: Set[int] = {
     408,  # Request Timeout
-    429,  # Too Many Requests (防雪崩：不切换账号，仅退避重试)
     500,  # Internal Server Error
     502,  # Bad Gateway
     503,  # Service Unavailable
@@ -84,10 +82,8 @@ async def retry_async(
                 raise
             
             if attempt < max_retries and is_retryable_error(status_code, e):
-                # 指数退避 + 随机抖动（防雪崩）
+                # 指数退避
                 delay = min(base_delay * (2 ** attempt), max_delay)
-                jitter = random.uniform(0, delay * 0.3)
-                delay += jitter
                 
                 if on_retry:
                     on_retry(attempt + 1, e)
@@ -124,9 +120,7 @@ class RetryableRequest:
         return is_retryable_error(status_code, error)
     
     async def wait(self):
-        """等待重试延迟（含随机抖动防雪崩）"""
+        """等待重试延迟"""
         delay = min(self.base_delay * (2 ** (self.attempt - 1)), 5.0)
-        jitter = random.uniform(0, delay * 0.3)
-        delay += jitter
         print(f"[Retry] 第 {self.attempt} 次重试，延迟 {delay:.1f}s")
         await asyncio.sleep(delay)

@@ -4,6 +4,7 @@
 """
 import uuid
 import httpx
+from .http_pool import http_pool
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -146,16 +147,15 @@ async def get_usage_limits(
     headers = build_usage_headers(access_token, machine_id, kiro_version)
     
     try:
-        async with httpx.AsyncClient(timeout=10, verify=False) as client:
-            response = await client.get(url, headers=headers)
-            
-            if response.status_code != 200:
-                return False, {"error": f"API 请求失败: {response.status_code} - {response.text[:200]}"}
-            
-            data = response.json()
-            usage_info = calculate_balance(data)
-            return True, usage_info
-            
+        response = await http_pool.model_client.get(url, headers=headers)
+        
+        if response.status_code != 200:
+            return False, {"error": f"API 请求失败: {response.status_code} - {response.text[:200]}"}
+        
+        data = response.json()
+        usage_info = calculate_balance(data)
+        return True, usage_info
+        
     except httpx.TimeoutException:
         return False, {"error": "请求超时"}
     except Exception as e:

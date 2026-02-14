@@ -114,6 +114,40 @@ CSS_DOCS = '''
 
 CSS_STYLES = CSS_BASE + CSS_LAYOUT + CSS_COMPONENTS + CSS_FORMS + CSS_ACCOUNTS + CSS_API + CSS_DOCS
 
+CSS_TERMINAL = '''
+.terminal-container { display: flex; flex-direction: column; height: 600px; }
+.terminal-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
+.terminal-filters { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.terminal-filter { padding: 0.25rem 0.6rem; border: 1px solid var(--border); border-radius: 4px; font-size: 0.75rem; cursor: pointer; background: var(--card); color: var(--muted); transition: all 0.2s; user-select: none; }
+.terminal-filter.active { font-weight: 600; }
+.terminal-filter[data-level="ALL"].active { background: var(--accent); color: var(--bg); border-color: var(--accent); }
+.terminal-filter[data-level="ERROR"].active { background: var(--error); color: #fff; border-color: var(--error); }
+.terminal-filter[data-level="WARN"].active { background: var(--warn); color: #fff; border-color: var(--warn); }
+.terminal-filter[data-level="INFO"].active { background: var(--success); color: #fff; border-color: var(--success); }
+.terminal-filter[data-level="DEBUG"].active { background: var(--info); color: #fff; border-color: var(--info); }
+.terminal-actions { display: flex; gap: 0.25rem; align-items: center; }
+.terminal-actions button { padding: 0.25rem 0.5rem; font-size: 0.75rem; }
+.terminal-search { padding: 0.25rem 0.5rem; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); font-size: 0.75rem; width: 150px; }
+.terminal-body { flex: 1; background: #0d1117; border: 1px solid var(--border); border-radius: 6px; overflow-y: auto; padding: 0.5rem; font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", "SF Mono", Consolas, monospace; font-size: 0.78rem; line-height: 1.5; scroll-behavior: smooth; }
+.terminal-line { padding: 1px 4px; border-radius: 2px; white-space: pre-wrap; word-break: break-all; display: flex; gap: 0.5rem; }
+.terminal-line:hover { background: rgba(255,255,255,0.04); }
+.terminal-time { color: #6e7681; flex-shrink: 0; user-select: none; }
+.terminal-level { font-weight: 600; flex-shrink: 0; width: 44px; text-align: center; user-select: none; }
+.terminal-msg { color: #c9d1d9; flex: 1; }
+.terminal-line.level-ERROR .terminal-level { color: #f85149; }
+.terminal-line.level-ERROR .terminal-msg { color: #ffa198; }
+.terminal-line.level-WARN .terminal-level { color: #d29922; }
+.terminal-line.level-WARN .terminal-msg { color: #e3b341; }
+.terminal-line.level-INFO .terminal-level { color: #3fb950; }
+.terminal-line.level-DEBUG .terminal-level { color: #58a6ff; }
+.terminal-line.level-DEBUG .terminal-msg { color: #8b949e; }
+.terminal-status { display: flex; justify-content: space-between; align-items: center; padding: 0.25rem 0; font-size: 0.7rem; color: var(--muted); }
+.terminal-status .status-connected { color: var(--success); }
+.terminal-status .status-disconnected { color: var(--error); }
+'''
+
+CSS_STYLES += CSS_TERMINAL
+
 
 # ==================== HTML 模板 ====================
 HTML_HEADER = '''
@@ -324,6 +358,33 @@ HTML_LOGS = '''
       <thead><tr><th>时间</th><th>路径</th><th>模型</th><th>账号</th><th>状态</th><th>耗时</th></tr></thead>
       <tbody id="logTable"></tbody>
     </table>
+  </div>
+  <div class="card">
+    <h3>实时终端日志</h3>
+    <div class="terminal-container">
+      <div class="terminal-toolbar">
+        <div class="terminal-filters">
+          <span class="terminal-filter active" data-level="ALL" onclick="termFilterLevel(this)">全部</span>
+          <span class="terminal-filter active" data-level="ERROR" onclick="termFilterLevel(this)">ERROR</span>
+          <span class="terminal-filter active" data-level="WARN" onclick="termFilterLevel(this)">WARN</span>
+          <span class="terminal-filter active" data-level="INFO" onclick="termFilterLevel(this)">INFO</span>
+          <span class="terminal-filter active" data-level="DEBUG" onclick="termFilterLevel(this)">DEBUG</span>
+        </div>
+        <div class="terminal-actions">
+          <input type="text" class="terminal-search" id="termSearch" placeholder="搜索日志..." oninput="termApplyFilter()">
+          <button class="secondary small" onclick="termCopyAll()" title="复制所有可见日志">复制</button>
+          <button class="secondary small" onclick="termClear()" title="清空终端">清空</button>
+          <label style="display:flex;align-items:center;gap:0.25rem;font-size:0.75rem;color:var(--muted);cursor:pointer;user-select:none">
+            <input type="checkbox" id="termAutoScroll" checked onchange="termToggleAutoScroll()"> 自动滚动
+          </label>
+        </div>
+      </div>
+      <div class="terminal-body" id="termBody"></div>
+      <div class="terminal-status">
+        <span id="termConnStatus"><span class="status-disconnected">● 未连接</span></span>
+        <span id="termLineCount">0 行</span>
+      </div>
+    </div>
   </div>
 </div>
 '''
@@ -834,6 +895,178 @@ async function loadLogs(){
     `).join('');
   }catch(e){console.error(e)}
 }
+'''
+
+JS_TERMINAL = '''
+// 实时终端日志
+let termSSE = null;
+let termAutoScroll = true;
+let termLines = [];
+let termActiveLevels = new Set(["ERROR","WARN","INFO","DEBUG"]);
+let termSearchText = "";
+const TERM_MAX_LINES = 2000;
+
+function termConnect(){
+  if(termSSE) termSSE.close();
+  termSSE = new EventSource("/api/logs/stream");
+  termSSE.onopen = () => {
+    $("#termConnStatus").innerHTML = '<span class="status-connected">● 已连接</span>';
+  };
+  termSSE.onmessage = (e) => {
+    try {
+      const entry = JSON.parse(e.data);
+      termAddLine(entry);
+    } catch(err) { console.error("parse log error:", err); }
+  };
+  termSSE.onerror = () => {
+    $("#termConnStatus").innerHTML = '<span class="status-disconnected">● 连接断开，重连中...</span>';
+    // EventSource 会自动重连
+  };
+}
+
+function termAddLine(entry){
+  termLines.push(entry);
+  if(termLines.length > TERM_MAX_LINES){
+    termLines = termLines.slice(-TERM_MAX_LINES);
+    // 需要重新渲染
+    termRender();
+    return;
+  }
+  // 增量渲染
+  const el = termCreateLineEl(entry);
+  if(el){
+    const body = $("#termBody");
+    body.appendChild(el);
+    if(termAutoScroll) body.scrollTop = body.scrollHeight;
+  }
+  termUpdateCount();
+}
+
+function termCreateLineEl(entry){
+  const level = entry.level || "INFO";
+  const visible = termActiveLevels.has(level);
+  const matchesSearch = !termSearchText || entry.message.toLowerCase().includes(termSearchText);
+  
+  const div = document.createElement("div");
+  div.className = "terminal-line level-" + level;
+  div.dataset.level = level;
+  if(!visible || !matchesSearch) div.style.display = "none";
+  
+  const ts = new Date(entry.timestamp * 1000);
+  const timeStr = ts.toLocaleTimeString("zh-CN", {hour12:false, hour:"2-digit", minute:"2-digit", second:"2-digit"});
+  const msStr = String(ts.getMilliseconds()).padStart(3,"0");
+  
+  div.innerHTML = '<span class="terminal-time">' + timeStr + "." + msStr + '</span>'
+    + '<span class="terminal-level">' + level + '</span>'
+    + '<span class="terminal-msg">' + escapeHtml(entry.message) + '</span>';
+  return div;
+}
+
+function termRender(){
+  const body = $("#termBody");
+  body.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  termLines.forEach(entry => {
+    const el = termCreateLineEl(entry);
+    if(el) frag.appendChild(el);
+  });
+  body.appendChild(frag);
+  if(termAutoScroll) body.scrollTop = body.scrollHeight;
+  termUpdateCount();
+}
+
+function termFilterLevel(el){
+  const level = el.dataset.level;
+  if(level === "ALL"){
+    // 点 ALL 切换全部
+    const allActive = el.classList.contains("active");
+    if(allActive){
+      // 取消全部
+      $$(".terminal-filter").forEach(f => f.classList.remove("active"));
+      termActiveLevels.clear();
+    } else {
+      // 全选
+      $$(".terminal-filter").forEach(f => f.classList.add("active"));
+      termActiveLevels = new Set(["ERROR","WARN","INFO","DEBUG"]);
+    }
+  } else {
+    el.classList.toggle("active");
+    if(el.classList.contains("active")){
+      termActiveLevels.add(level);
+    } else {
+      termActiveLevels.delete(level);
+    }
+    // 更新 ALL 按钮状态
+    const allBtn = document.querySelector('.terminal-filter[data-level="ALL"]');
+    if(termActiveLevels.size === 4){
+      allBtn.classList.add("active");
+    } else {
+      allBtn.classList.remove("active");
+    }
+  }
+  termApplyFilter();
+}
+
+function termApplyFilter(){
+  termSearchText = ($("#termSearch").value || "").toLowerCase();
+  $$("#termBody .terminal-line").forEach(line => {
+    const level = line.dataset.level;
+    const msg = line.querySelector(".terminal-msg").textContent.toLowerCase();
+    const levelOk = termActiveLevels.has(level);
+    const searchOk = !termSearchText || msg.includes(termSearchText);
+    line.style.display = (levelOk && searchOk) ? "" : "none";
+  });
+  termUpdateCount();
+}
+
+function termUpdateCount(){
+  const visible = $$("#termBody .terminal-line").filter ? 
+    Array.from($$("#termBody .terminal-line")).filter(l => l.style.display !== "none").length :
+    $$("#termBody .terminal-line").length;
+  const total = termLines.length;
+  $("#termLineCount").textContent = visible + "/" + total + " 行";
+}
+
+function termClear(){
+  termLines = [];
+  $("#termBody").innerHTML = "";
+  termUpdateCount();
+}
+
+function termCopyAll(){
+  const lines = Array.from($$("#termBody .terminal-line"))
+    .filter(l => l.style.display !== "none")
+    .map(l => {
+      const time = l.querySelector(".terminal-time").textContent;
+      const level = l.querySelector(".terminal-level").textContent;
+      const msg = l.querySelector(".terminal-msg").textContent;
+      return time + " [" + level.trim() + "] " + msg;
+    });
+  copy(lines.join("\\n"));
+}
+
+function termToggleAutoScroll(){
+  termAutoScroll = $("#termAutoScroll").checked;
+  if(termAutoScroll){
+    const body = $("#termBody");
+    body.scrollTop = body.scrollHeight;
+  }
+}
+
+// 切到日志 tab 时自动连接
+const origTabClick = function(){
+  $$(".tab").forEach(t=>t.onclick=()=>{
+    $$(".tab").forEach(x=>x.classList.remove("active"));
+    $$(".panel").forEach(x=>x.classList.remove("active"));
+    t.classList.add("active");
+    $("#"+t.dataset.tab).classList.add("active");
+    if(t.dataset.tab==="monitor"){loadStats();loadQuota();}
+    if(t.dataset.tab==="logs"){loadLogs();if(!termSSE)termConnect();}
+    if(t.dataset.tab==="accounts")loadAccounts();
+    if(t.dataset.tab==="flows"){loadFlowStats();loadFlows();}
+  });
+};
+origTabClick();
 '''
 
 
@@ -1645,7 +1878,7 @@ async function removeCustomModel(modelId){
 }
 '''
 
-JS_SCRIPTS = JS_UTILS + JS_TABS + JS_STATUS + JS_DOCS + JS_STATS + JS_LOGS + JS_ACCOUNTS + JS_LOGIN + JS_FLOWS + JS_SETTINGS
+JS_SCRIPTS = JS_UTILS + JS_STATUS + JS_DOCS + JS_STATS + JS_LOGS + JS_TERMINAL + JS_ACCOUNTS + JS_LOGIN + JS_FLOWS + JS_SETTINGS
 
 
 # ==================== 组装最终 HTML ====================
@@ -1821,6 +2054,14 @@ function _(key) {{ return I18N[key] || key; }}
         '>账号<': f'>{t("logs.account")}<',
         '>状态<': f'>{"Status" if lang == "en" else "状态"}<',
         '>耗时<': f'>{t("logs.duration")}<',
+        # Terminal
+        '>实时终端日志<': f'>{"Real-time Terminal Logs" if lang == "en" else "实时终端日志"}<',
+        '>全部<': f'>{"All" if lang == "en" else "全部"}<',
+        'placeholder="搜索日志..."': f'placeholder="{"Search logs..." if lang == "en" else "搜索日志..."}"',
+        '>复制<': f'>{"Copy" if lang == "en" else "复制"}<',
+        '>清空<': f'>{"Clear" if lang == "en" else "清空"}<',
+        '> 自动滚动': f'> {"Auto Scroll" if lang == "en" else "自动滚动"}',
+        '>● 未连接<': f'>{"● Disconnected" if lang == "en" else "● 未连接"}<',
         # Settings - Port
         '>服务端口<': f'>{t("settings.port")}<',
         '当前服务运行在端口': f'{"Current service running on port" if lang == "en" else "当前服务运行在端口"}',

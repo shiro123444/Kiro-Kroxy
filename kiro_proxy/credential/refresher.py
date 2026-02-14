@@ -1,5 +1,6 @@
 """Token 刷新器"""
 import httpx
+from ..core.http_pool import http_pool
 from datetime import datetime, timezone, timedelta
 from typing import Tuple
 
@@ -58,63 +59,62 @@ class TokenRefresher:
         kiro_version = get_kiro_version()
         
         try:
-            async with httpx.AsyncClient(verify=False, timeout=30) as client:
-                if auth_method == "idc":
-                    if not self.credentials.client_id or not self.credentials.client_secret:
-                        return False, "IdC 认证缺少 client_id 或 client_secret"
-                    
-                    body = {
-                        "refreshToken": self.credentials.refresh_token,
-                        "clientId": self.credentials.client_id,
-                        "clientSecret": self.credentials.client_secret,
-                        "grantType": "refresh_token"
-                    }
-                    headers = {
-                        "Content-Type": "application/json",
-                        "x-amz-user-agent": f"aws-sdk-js/3.738.0 KiroIDE-{kiro_version}-{machine_id}",
-                        "User-Agent": "node",
-                    }
+            if auth_method == "idc":
+                if not self.credentials.client_id or not self.credentials.client_secret:
+                    return False, "IdC 认证缺少 client_id 或 client_secret"
+                
+                body = {
+                    "refreshToken": self.credentials.refresh_token,
+                    "clientId": self.credentials.client_id,
+                    "clientSecret": self.credentials.client_secret,
+                    "grantType": "refresh_token"
+                }
+                headers = {
+                    "Content-Type": "application/json",
+                    "x-amz-user-agent": f"aws-sdk-js/3.738.0 KiroIDE-{kiro_version}-{machine_id}",
+                    "User-Agent": "node",
+                }
+            else:
+                body = {"refreshToken": self.credentials.refresh_token}
+                headers = {
+                    "Content-Type": "application/json",
+                    "User-Agent": f"KiroIDE-{kiro_version}-{machine_id}",
+                    "Accept": "application/json, text/plain, */*",
+                }
+            
+            resp = await http_pool.short_client.post(refresh_url, json=body, headers=headers)
+            
+            if resp.status_code != 200:
+                error_text = resp.text
+                if resp.status_code == 401:
+                    return False, "凭证已过期或无效，需要重新登录"
+                elif resp.status_code == 429:
+                    return False, "请求过于频繁，请稍后重试"
                 else:
-                    body = {"refreshToken": self.credentials.refresh_token}
-                    headers = {
-                        "Content-Type": "application/json",
-                        "User-Agent": f"KiroIDE-{kiro_version}-{machine_id}",
-                        "Accept": "application/json, text/plain, */*",
-                    }
-                
-                resp = await client.post(refresh_url, json=body, headers=headers)
-                
-                if resp.status_code != 200:
-                    error_text = resp.text
-                    if resp.status_code == 401:
-                        return False, "凭证已过期或无效，需要重新登录"
-                    elif resp.status_code == 429:
-                        return False, "请求过于频繁，请稍后重试"
-                    else:
-                        return False, f"刷新失败: {resp.status_code} - {error_text[:200]}"
-                
-                data = resp.json()
-                
-                new_token = data.get("accessToken") or data.get("access_token")
-                if not new_token:
-                    return False, "响应中没有 access_token"
-                
-                # 更新凭证
-                self.credentials.access_token = new_token
-                
-                if rt := data.get("refreshToken") or data.get("refresh_token"):
-                    self.credentials.refresh_token = rt
-                
-                if arn := data.get("profileArn"):
-                    self.credentials.profile_arn = arn
-                
-                if expires_in := data.get("expiresIn") or data.get("expires_in"):
-                    expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-                    self.credentials.expires_at = expires_at.isoformat()
-                
-                self.credentials.last_refresh = datetime.now(timezone.utc).isoformat()
-                
-                return True, new_token
+                    return False, f"刷新失败: {resp.status_code} - {error_text[:200]}"
+            
+            data = resp.json()
+            
+            new_token = data.get("accessToken") or data.get("access_token")
+            if not new_token:
+                return False, "响应中没有 access_token"
+            
+            # 更新凭证
+            self.credentials.access_token = new_token
+            
+            if rt := data.get("refreshToken") or data.get("refresh_token"):
+                self.credentials.refresh_token = rt
+            
+            if arn := data.get("profileArn"):
+                self.credentials.profile_arn = arn
+            
+            if expires_in := data.get("expiresIn") or data.get("expires_in"):
+                expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+                self.credentials.expires_at = expires_at.isoformat()
+            
+            self.credentials.last_refresh = datetime.now(timezone.utc).isoformat()
+            
+            return True, new_token
                 
         except Exception as e:
             return False, f"刷新异常: {str(e)}"

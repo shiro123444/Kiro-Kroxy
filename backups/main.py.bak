@@ -12,7 +12,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import MODELS_URL, get_all_kiro_models, get_custom_models, add_custom_model, remove_custom_model, _load_custom_models, BUILTIN_KIRO_MODELS
 from .core import state, scheduler, stats_manager
 from .core.log_broadcaster import log_broadcaster
-from .core.http_pool import http_pool
 from .handlers import anthropic, openai, gemini, admin
 from .handlers import responses as responses_handler
 
@@ -43,14 +42,10 @@ async def lifespan(app: FastAPI):
     # 启动时
     log_broadcaster.install()  # 安装日志广播
     _load_custom_models()  # 加载自定义模型
-    await http_pool.warmup()  # 预热 HTTP 连接池
     await scheduler.start()
     yield
     # 关闭时
-    from .core import stats_manager
-    stats_manager.force_save()  # 持久化统计
     await scheduler.stop()
-    await http_pool.close_all()  # 关闭连接池
 
 
 app = FastAPI(title="Kiro API Proxy", docs_url="/docs", redoc_url=None, lifespan=lifespan)
@@ -102,41 +97,42 @@ async def models():
             "amz-sdk-invocation-id": str(uuid.uuid4()),
             "Authorization": f"Bearer {token}",
         }
-        resp = await http_pool.model_client.get(MODELS_URL, headers=headers, params={"origin": "AI_EDITOR"})
-        if resp.status_code == 200:
-            data = resp.json()
-            model_list = [
-                {
-                    "id": m["modelId"],
-                    "object": "model",
-                    "owned_by": "kiro",
-                    "name": m["modelName"],
-                    "context_window": MODEL_CONTEXT_WINDOWS.get(m["modelId"], 200000),
-                    "max_tokens": MODEL_MAX_OUTPUT_TOKENS,
+        async with httpx.AsyncClient(verify=False, timeout=30) as client:
+            resp = await client.get(MODELS_URL, headers=headers, params={"origin": "AI_EDITOR"})
+            if resp.status_code == 200:
+                data = resp.json()
+                model_list = [
+                    {
+                        "id": m["modelId"],
+                        "object": "model",
+                        "owned_by": "kiro",
+                        "name": m["modelName"],
+                        "context_window": MODEL_CONTEXT_WINDOWS.get(m["modelId"], 200000),
+                        "max_tokens": MODEL_MAX_OUTPUT_TOKENS,
+                    }
+                    for m in data.get("models", [])
+                ]
+                # 将内置新模型和自定义模型追加到上游列表中
+                existing_ids = {m["id"] for m in model_list}
+                for extra_id in sorted(BUILTIN_KIRO_MODELS):
+                    if extra_id not in existing_ids and extra_id != "auto":
+                        model_list.append({
+                            "id": extra_id, "object": "model", "owned_by": "kiro", "name": extra_id,
+                            "context_window": MODEL_CONTEXT_WINDOWS.get(extra_id, 200000),
+                            "max_tokens": MODEL_MAX_OUTPUT_TOKENS,
+                        })
+                custom = get_custom_models()
+                for mid, info in custom.items():
+                    if mid not in existing_ids:
+                        model_list.append({
+                            "id": mid, "object": "model", "owned_by": "kiro", "name": info.get("name", mid),
+                            "context_window": MODEL_CONTEXT_WINDOWS.get(mid, 200000),
+                            "max_tokens": MODEL_MAX_OUTPUT_TOKENS,
+                        })
+                return {
+                    "object": "list",
+                    "data": model_list
                 }
-                for m in data.get("models", [])
-            ]
-            # 将内置新模型和自定义模型追加到上游列表中
-            existing_ids = {m["id"] for m in model_list}
-            for extra_id in sorted(BUILTIN_KIRO_MODELS):
-                if extra_id not in existing_ids and extra_id != "auto":
-                    model_list.append({
-                        "id": extra_id, "object": "model", "owned_by": "kiro", "name": extra_id,
-                        "context_window": MODEL_CONTEXT_WINDOWS.get(extra_id, 200000),
-                        "max_tokens": MODEL_MAX_OUTPUT_TOKENS,
-                    })
-            custom = get_custom_models()
-            for mid, info in custom.items():
-                if mid not in existing_ids:
-                    model_list.append({
-                        "id": mid, "object": "model", "owned_by": "kiro", "name": info.get("name", mid),
-                        "context_window": MODEL_CONTEXT_WINDOWS.get(mid, 200000),
-                        "max_tokens": MODEL_MAX_OUTPUT_TOKENS,
-                    })
-            return {
-                "object": "list",
-                "data": model_list
-            }
     except Exception:
         pass
     

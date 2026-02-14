@@ -18,6 +18,8 @@ from .error_handler import (
     get_anthropic_error_response, format_error_log
 )
 from .rate_limiter import RateLimiter, RateLimitConfig, rate_limiter, get_rate_limiter
+from .log_broadcaster import log_broadcaster, LogBroadcaster
+from .http_pool import http_pool, HttpClientPool
 
 __all__ = [
     "state", "ProxyState", "RequestLog", "Account", 
@@ -32,5 +34,6 @@ __all__ = [
     "is_content_length_error",
     "ErrorType", "KiroError", "classify_error", "is_account_suspended",
     "get_anthropic_error_response", "format_error_log",
-    "RateLimiter", "RateLimitConfig", "rate_limiter", "get_rate_limiter"
+    "RateLimiter", "RateLimitConfig", "rate_limiter", "get_rate_limiter",
+    "log_broadcaster", "LogBroadcaster"
 ]

@@ -3,6 +3,7 @@ import json
 import uuid
 import time
 import httpx
+from ..core.http_pool import http_pool
 from pathlib import Path
 from datetime import datetime
 from dataclasses import asdict
@@ -185,15 +186,14 @@ async def speedtest():
             "x-amz-user-agent": f"aws-sdk-js/1.0.0 KiroIDE-{kiro_version}-{machine_id}",
             "Authorization": f"Bearer {token}",
         }
-        async with httpx.AsyncClient(verify=False, timeout=10) as client:
-            resp = await client.get(MODELS_URL, headers=headers, params={"origin": "AI_EDITOR"})
-            latency = (time.time() - start) * 1000
-            return {
-                "ok": resp.status_code == 200,
-                "latency_ms": round(latency, 2),
-                "status": resp.status_code,
-                "account_id": account.id
-            }
+        resp = await http_pool.model_client.get(MODELS_URL, headers=headers, params={"origin": "AI_EDITOR"})
+        latency = (time.time() - start) * 1000
+        return {
+            "ok": resp.status_code == 200,
+            "latency_ms": round(latency, 2),
+            "status": resp.status_code,
+            "account_id": account.id
+        }
     except Exception as e:
         return {"ok": False, "error": str(e), "latency_ms": (time.time() - start) * 1000}
 
@@ -417,45 +417,44 @@ async def run_health_check():
                 "content-type": "application/json"
             }
             
-            async with httpx.AsyncClient(verify=False, timeout=10) as client:
-                resp = await client.get(
-                    MODELS_URL,
-                    headers=headers,
-                    params={"origin": "AI_EDITOR"}
-                )
-                
-                if resp.status_code == 200:
-                    if acc.status == CredentialStatus.UNHEALTHY:
-                        acc.status = CredentialStatus.ACTIVE
-                    results.append({
-                        "id": acc.id,
-                        "name": acc.name,
-                        "status": "healthy",
-                        "healthy": True,
-                        "latency_ms": resp.elapsed.total_seconds() * 1000
-                    })
-                elif resp.status_code == 401:
-                    acc.status = CredentialStatus.UNHEALTHY
-                    results.append({
-                        "id": acc.id,
-                        "name": acc.name,
-                        "status": "auth_failed",
-                        "healthy": False
-                    })
-                elif resp.status_code == 429:
-                    results.append({
-                        "id": acc.id,
-                        "name": acc.name,
-                        "status": "rate_limited",
-                        "healthy": True  # 限流不代表不健康
-                    })
-                else:
-                    results.append({
-                        "id": acc.id,
-                        "name": acc.name,
-                        "status": f"error_{resp.status_code}",
-                        "healthy": False
-                    })
+            resp = await http_pool.model_client.get(
+                MODELS_URL,
+                headers=headers,
+                params={"origin": "AI_EDITOR"}
+            )
+            
+            if resp.status_code == 200:
+                if acc.status == CredentialStatus.UNHEALTHY:
+                    acc.status = CredentialStatus.ACTIVE
+                results.append({
+                    "id": acc.id,
+                    "name": acc.name,
+                    "status": "healthy",
+                    "healthy": True,
+                    "latency_ms": resp.elapsed.total_seconds() * 1000
+                })
+            elif resp.status_code == 401:
+                acc.status = CredentialStatus.UNHEALTHY
+                results.append({
+                    "id": acc.id,
+                    "name": acc.name,
+                    "status": "auth_failed",
+                    "healthy": False
+                })
+            elif resp.status_code == 429:
+                results.append({
+                    "id": acc.id,
+                    "name": acc.name,
+                    "status": "rate_limited",
+                    "healthy": True  # 限流不代表不健康
+                })
+            else:
+                results.append({
+                    "id": acc.id,
+                    "name": acc.name,
+                    "status": f"error_{resp.status_code}",
+                    "healthy": False
+                })
                     
         except Exception as e:
             results.append({

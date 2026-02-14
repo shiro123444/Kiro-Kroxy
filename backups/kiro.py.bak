@@ -1,7 +1,6 @@
 """Kiro Provider"""
 import json
 import uuid
-import binascii
 from typing import Dict, Any, List, Optional, Tuple
 
 from .base import BaseProvider
@@ -136,21 +135,6 @@ class KiroProvider(BaseProvider):
             if total_len == 0 or total_len > len(raw) - pos:
                 break
             
-            # CRC32 校验 - 借鉴 kiro.rs 的实现
-            # Prelude CRC: 前 8 字节的 CRC32
-            prelude_crc = int.from_bytes(raw[pos+8:pos+12], 'big')
-            expected_prelude_crc = binascii.crc32(raw[pos:pos+8]) & 0xFFFFFFFF
-            if prelude_crc != expected_prelude_crc:
-                pos += total_len  # CRC 不匹配，跳过此消息
-                continue
-            
-            # Message CRC: 整个消息（不含最后 4 字节）的 CRC32
-            msg_crc = int.from_bytes(raw[pos+total_len-4:pos+total_len], 'big')
-            expected_msg_crc = binascii.crc32(raw[pos:pos+total_len-4]) & 0xFFFFFFFF
-            if msg_crc != expected_msg_crc:
-                pos += total_len  # CRC 不匹配，跳过此消息
-                continue
-            
             header_start = pos + 12
             header_end = header_start + headers_len
             headers_data = raw[header_start:header_end]
@@ -162,7 +146,7 @@ class KiroProvider(BaseProvider):
                     event_type = 'toolUseEvent'
                 elif 'assistantResponseEvent' in headers_str:
                     event_type = 'assistantResponseEvent'
-            except Exception:
+            except:
                 pass
             
             payload_start = pos + 12 + headers_len
@@ -195,7 +179,7 @@ class KiroProvider(BaseProvider):
                                 tool_input_buffer[tool_id]["name"] = tool_name
                             if tool_input:
                                 tool_input_buffer[tool_id]["input_parts"].append(tool_input)
-                except Exception:
+                except:
                     pass
             
             pos += total_len

@@ -12,9 +12,7 @@
 import json
 import hashlib
 import re
-import base64
 from typing import List, Dict, Any, Tuple, Optional
-from .core.http_pool import http_pool
 
 # 常量
 MAX_TOOLS = 50
@@ -38,28 +36,27 @@ def _detect_image_format(media_type: str) -> str:
     return "jpeg"
 
 
-async def _download_image_url(url: str) -> Tuple[str, str]:
-    """异步下载 URL 图片并转为 base64（使用连接池，不阻塞事件循环）
+def _download_image_url(url: str) -> Tuple[str, str]:
+    """下载 URL 图片并转为 base64
     
     Returns:
         (format, base64_data) or ("", "") on failure
     """
     try:
-        resp = await http_pool.short_client.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
-        if resp.status_code == 200:
-            content_type = resp.headers.get("content-type", "image/jpeg")
+        import urllib.request
+        import base64
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            content_type = resp.headers.get("Content-Type", "image/jpeg")
             fmt = _detect_image_format(content_type)
-            data = base64.b64encode(resp.content).decode("utf-8")
+            data = base64.b64encode(resp.read()).decode("utf-8")
             return fmt, data
-        else:
-            print(f"[Image] URL 图片下载失败: HTTP {resp.status_code}")
-            return "", ""
     except Exception as e:
         print(f"[Image] URL 图片下载失败: {e}")
         return "", ""
 
 
-async def extract_images_from_content(content) -> Tuple[str, List[dict]]:
+def extract_images_from_content(content) -> Tuple[str, List[dict]]:
     """从消息内容中提取文本和图片
     
     支持格式：
@@ -107,7 +104,7 @@ async def extract_images_from_content(content) -> Tuple[str, List[dict]]:
                 elif source_type == "url":
                     url = source.get("url", "")
                     if url:
-                        fmt, data = await _download_image_url(url)
+                        fmt, data = _download_image_url(url)
                         if data:
                             images.append({
                                 "format": fmt,
@@ -131,7 +128,7 @@ async def extract_images_from_content(content) -> Tuple[str, List[dict]]:
                     elif source_type == "url":
                         url = source.get("url", "")
                         if url:
-                            fmt, data = await _download_image_url(url)
+                            fmt, data = _download_image_url(url)
                             if data:
                                 images.append({
                                     "format": fmt,
@@ -153,7 +150,7 @@ async def extract_images_from_content(content) -> Tuple[str, List[dict]]:
                             "source": {"bytes": data}
                         })
                 elif url.startswith("http"):
-                    fmt, data = await _download_image_url(url)
+                    fmt, data = _download_image_url(url)
                     if data:
                         images.append({
                             "format": fmt,

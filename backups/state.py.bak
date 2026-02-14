@@ -94,16 +94,7 @@ class ProxyState:
         
         available = [a for a in self.accounts if a.is_available()]
         if not available:
-            # 自动恢复：当所有账号都不可用时，重置 COOLDOWN 状态的账号
-            cooldown_accounts = [a for a in self.accounts if a.enabled and a.status == CredentialStatus.COOLDOWN]
-            if cooldown_accounts:
-                print(f"[State] 所有账号不可用，自动恢复 {len(cooldown_accounts)} 个 COOLDOWN 账号")
-                for acc in cooldown_accounts:
-                    acc.status = CredentialStatus.ACTIVE
-                    quota_manager.restore(acc.id)
-                available = [a for a in self.accounts if a.is_available()]
-            if not available:
-                return None
+            return None
         
         account = min(available, key=lambda a: a.request_count)
         
