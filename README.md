@@ -25,7 +25,7 @@
 
 > **⚠️ 测试说明**
 > 
-> 本项目支持 **Claude Code**、**Codex CLI**、**Gemini CLI** 三种客户端，工具调用功能已全面支持。
+> 本项目支持 **Claude Code**、**Codex CLI**、**Gemini CLI**、**VS Code Copilot Chat (BYOK)** 四种客户端，流式响应与工具调用功能已全面支持。
 
 ## 功能特性
 
@@ -38,6 +38,27 @@
 - **会话粘性** - 同一会话 60 秒内使用同一账号，保持上下文
 - **Web UI** - 简洁的管理界面，支持监控、日志、设置
 - **多语言界面** - 支持中文和英文界面切换
+
+### v1.8.1 Anthropic SSE 流式修复 + OpenAI 工具调用 + 模型映射
+
+#### 🔧 Anthropic SSE 流式响应修复
+- **问题**：Claude Code (VSCode) 报错 `Stream completed without receiving message_start event`，流式响应后回退到非流式模式也失败
+- **根因**：SSE 事件缺少 `event:` 行。Anthropic 协议要求每个 SSE 事件包含两行：`event: <type>` 和 `data: <json>`，代理只发送了 `data:` 行
+- **修复**：所有 SSE 事件（`message_start`、`content_block_start`、`content_block_delta`、`content_block_stop`、`message_delta`、`message_stop`、`error`）均添加标准 `event:` 前缀
+- **额外**：添加 `event: ping` 心跳事件、`Cache-Control: no-cache` 和 `X-Accel-Buffering: no` 响应头防止代理/网关缓冲
+
+#### 🛠️ OpenAI 工具调用完整支持
+- **修复 `parse_event_stream_full`**：正确保留 `tool_uses` 数据，VS Code Copilot Chat (BYOK) 工具调用不再丢失
+- **真正的流式 tool_calls**：实现 OpenAI 标准的 `delta.tool_calls` 流式格式，包括 `index`、`function.name`、`function.arguments` 分块传输
+- **finish_reason 修正**：有工具调用时正确返回 `"tool_calls"` 而非 `"stop"`
+- **token 用量**：从 Kiro 响应中提取真实 `input_tokens` / `output_tokens`，不再返回固定值
+- **tool_call ID**：自动生成 `call_` 前缀的唯一 ID
+
+#### 🗺️ 智能模型名称映射
+- **连字符版本自动转换**：`claude-sonnet-4-5` → `claude-sonnet-4.5`（客户端可能发送连字符格式）
+- **带日期后缀**：`claude-sonnet-4-5-20250929` → `claude-sonnet-4.5`（自动去除日期后缀）
+- **GPT/Gemini 别名**：`gpt-4o` → `claude-sonnet-4`，`gpt-4o-mini` → `claude-haiku-4.5`，`o1` → `claude-opus-4.5`
+- **简短别名**：`sonnet` → `claude-sonnet-4`，`haiku` → `claude-haiku-4.5`，`opus` → `claude-opus-4.5`
 
 ### v1.8.0 性能大幅优化（借鉴 kiro.rs 架构）
 
@@ -158,12 +179,14 @@
 
 ## 工具调用支持
 
-| 功能 | Anthropic (Claude Code) | OpenAI (Codex CLI) | Gemini |
+| 功能 | Anthropic (Claude Code) | OpenAI (Codex CLI / Copilot) | Gemini |
 |------|------------------------|-------------------|--------|
 | 工具定义 | ✅ `tools` | ✅ `tools.function` | ✅ `functionDeclarations` |
 | 工具调用响应 | ✅ `tool_use` | ✅ `tool_calls` | ✅ `functionCall` |
 | 工具结果 | ✅ `tool_result` | ✅ `tool` 角色消息 | ✅ `functionResponse` |
 | 强制工具调用 | ✅ `tool_choice` | ✅ `tool_choice` | ✅ `toolConfig.mode` |
+| 流式响应 | ✅ SSE (`event:` + `data:`) | ✅ SSE (`data:`) | ❌ |
+| 流式工具调用 | ✅ `content_block_delta` | ✅ `delta.tool_calls` | ❌ |
 | 工具数量限制 | ✅ 50 个 | ✅ 50 个 | ✅ 50 个 |
 | 历史消息修复 | ✅ | ✅ | ✅ |
 | 图片理解 | ✅ | ✅ | ❌ |
@@ -327,12 +350,15 @@ sudo python3 scripts/uninstall_service.py
 
 ### 模型对照表
 
-| Kiro 模型 | 能力 | Claude Code | Codex CLI | Obsidian Copilot |
-|-----------|------|-------------|-----------|------------------|
-| `claude-sonnet-4` | ⭐⭐⭐ 推荐 | `claude-sonnet-4` | `gpt-4o` | `gpt-4o` |
-| `claude-sonnet-4.5` | ⭐⭐⭐⭐ 更强 | `claude-sonnet-4.5` | `gpt-4o` | `gpt-4o` |
-| `claude-haiku-4.5` | ⚡ 快速 | `claude-haiku-4.5` | `gpt-4o-mini` | `gpt-4o-mini` |
-| `claude-opus-4.5` | ⭐⭐⭐⭐⭐ 最强 | `claude-opus-4.5` | `o1` | `o1` |
+| Kiro 模型 | 能力 | Claude Code | Codex CLI / OpenAI | 别名 |
+|-----------|------|-------------|-----------|------|
+| `claude-sonnet-4` | ⭐⭐⭐ 推荐 | `claude-sonnet-4` | `gpt-4o` | `sonnet` |
+| `claude-sonnet-4.5` | ⭐⭐⭐⭐ 更强 | `claude-sonnet-4.5` | `gpt-4o` | `claude-sonnet-4-5` |
+| `claude-haiku-4.5` | ⚡ 快速 | `claude-haiku-4.5` | `gpt-4o-mini` | `haiku` |
+| `claude-opus-4.5` | ⭐⭐⭐⭐⭐ 最强 | `claude-opus-4.5` | `o1` | `opus` |
+| `claude-opus-4.6` | ⭐⭐⭐⭐⭐ 最新 | `claude-opus-4.6` | `o1` | `opus-4.6` |
+
+> **智能模型映射**：客户端发送的模型名会自动映射，支持连字符格式 (`claude-sonnet-4-5`)、带日期后缀 (`claude-sonnet-4-5-20250929`)、GPT/Gemini 别名、简短别名等。
 
 ### Claude Code
 
